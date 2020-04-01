@@ -21,6 +21,8 @@ eval: d_1942 ~ d_1969
 
 ### sell_prices.csv  
 
+### info
+店舗数 10(CA:4, Tx:3, WI:3)
 
 ### Discussion & knowleadge
 (2020/3/30)  
