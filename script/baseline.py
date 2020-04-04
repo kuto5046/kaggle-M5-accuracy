@@ -162,7 +162,7 @@ def read_data():
     return calendar_df, sell_prices_df, train_df, submission_df
 
 
-def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df, nrows):
+def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df):
 
     # 商品情報を抽出
     product_df = train_df.loc[:, "id":"state_id"]
@@ -170,9 +170,14 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df, nrows):
     # 列方向に連なっていたのを変形し行方向に連ねるように整理
     train_df = pd.melt(train_df, id_vars = ['id', 'item_id', 'dept_id', 'cat_id', 'store_id', 'state_id'], 
                        var_name = 'day', value_name = 'demand')
-    train_df = reduce_mem_usage(train_df)
+
+    # trainデータは1年分のみ利用する
+    train_df = train_df.loc[47198520:]
+    print("\n[CHECK] remove train data (only one year)")
+
     train_day = train_df["day"].unique()
-    print("\ntrain_data: {} ~ {}".format(train_day[0], train_day[-1]))
+    print("train_data: {0} ~ {1}".format(train_day[0], train_day[-1]))
+    print(len(train_day))
 
     # seperate test dataframes
     valid_df = submission_df[submission_df["id"].str.contains("validation")]
@@ -187,7 +192,8 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df, nrows):
     valid_df = pd.melt(valid_df, id_vars = ['id', 'item_id', 'dept_id', 'cat_id', 'store_id', 'state_id'],
                        var_name = 'day', value_name = 'demand')
     valid_day = valid_df["day"].unique()
-    print("valid_data[STAGE1]: {} ~ {}".format(valid_day[0], valid_day[-1]))
+    print("\nvalid_data: {0} ~ {1}".format(valid_day[0], valid_day[-1]))
+    print(len(valid_day))
 
     # train_df, valid_dfと同様にeval_dfとproduct_dfをmergeさせたい
     # しかしidが_evaluationのままだとデータが一致せずmergeできないので一時的に_validationにidを変更
@@ -197,30 +203,27 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df, nrows):
     eval_df = pd.melt(eval_df, id_vars = ['id', 'item_id', 'dept_id', 'cat_id', 'store_id', 'state_id'],
                       var_name = 'day', value_name = 'demand')
     eval_day = eval_df["day"].unique()
-    print("eval_data[STAGE2]: {} ~ {}".format(eval_day[0], eval_day[-1]))
+    print("\neval_data: {0} ~ {1}".format(eval_day[0], eval_day[-1]))
+    print(len(eval_day))
 
     train_df['part'] = 'train'
     valid_df['part'] = 'valid'
     eval_df['part'] = 'eval'
     
     data_df = pd.concat([train_df, valid_df, eval_df], axis = 0)
+    data_df = reduce_mem_usage(data_df)
     print("\n[INFO] data_df(after merge valid & eval) ->")
-    print(data_df.head(5))
-    # print(data_df.columns)
+    data_df.head()
 
     # 不要なdataframeの削除
     del train_df, valid_df, eval_df
-    
-    # NOTE get only a sample for fast training
-    # data_df = data_df.loc[nrows:]
-    # print("\n[CHECK] Remove some train data")
     
     # drop some calendar features
     calendar_df.drop(['weekday', 'wday', 'month', 'year'], inplace = True, axis = 1)
     
     # delete eval_df for now
     data_df = data_df[data_df['part'] != 'eval']
-    print("[CHECK] Remove the eval data in {} ~ {}".format(eval_day[0], eval_day[-1]))
+    print("[CHECK] Remove the eval data")
 
     # notebook crash with the entire dataset (maybee use tensorflow, dask, pyspark xD)
     data_df = pd.merge(data_df, calendar_df, how = 'left', left_on = ['day'], right_on = ['d'])
@@ -235,12 +238,12 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df, nrows):
     return data_df
 
 
-# 欠損値補間とlabel encoding
-def transform(data_df):
+# label encoding
+def encode_categorical(data_df):
     nan_features = ['event_name_1', 'event_type_1', 'event_name_2', 'event_type_2']
     for feature in nan_features:
-        data_df[feature].fillna('unknown', inplace=True)
-    
+        data_df[feature].fillna('unknown', inplace=True)  # label encodingのためnanを文字列に変換
+
     cat = ['item_id', 'dept_id', 'cat_id', 'store_id', 'state_id', 'event_name_1', 'event_type_1', 'event_name_2', 'event_type_2']
     for feature in cat:
         encoder = preprocessing.LabelEncoder()
@@ -251,76 +254,82 @@ def transform(data_df):
 
 # 特徴量エンジニアリング
 def feature_engineering(data_df):
+    """
+    1日後のリード特徴量
+    1日前のラグ特徴量
+    """
+
     print("\n[START] feature engineering ->")
     
     # black friday
-    black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
-    data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
+    # black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
+    # data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
 
     # rolling demand features
     # 28個分下にずらすことで時系列データの差分を取る
-    data_df['lag_t28'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28))
-    # data_df['lag_t29'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(29))
-    # data_df['lag_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(30))
+    # data_df['lag_7'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(7))
+    data_df['lag_28'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28))
 
     # per a week
-    data_df['rolling_mean_t7'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(7).mean())
-    data_df['rolling_std_t7'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(7).std())
+    # data_df['rmean_lag7_t7'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(7).rolling(7).mean())
+    # data_df['rmean_lag7_t28'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(7).rolling(28).mean())
+    data_df['rmean_lag28_t7'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(7).mean())
+    data_df['rmean_lag28_t28'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(28).mean())
+
+    # data_df['rolling_std_t7'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(7).std())
 
     # per a month
-    data_df['rolling_mean_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(30).mean())
-    data_df['rolling_std_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(30).std())
+    # data_df['rolling_mean_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(30).mean())
+    # data_df['rolling_mean_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(7).rolling(30).mean())
+    # data_df['rolling_std_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(30).std())
 
     # per 2 month 
-    data_df['rolling_mean_t60'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(60).mean())
+    # data_df['rolling_mean_t60'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(60).mean())
     # data_df['rolling_std_t60'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(60).std())
 
     # per 3 month 
     # data_df['rolling_mean_t90'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(90).mean())
-    data_df['rolling_std_t90'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(90).std())
+    # data_df['rolling_std_t90'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(90).std())
 
     # half year
     # data_df['rolling_mean_t180'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(180).mean())
-    data_df['rolling_std_t180'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(180).std())
+    # data_df['rolling_std_t180'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(180).std())
 
     # per a month
-    data_df['rolling_std_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(30).std())
+    # data_df['rolling_std_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(30).std())
     # data_df['rolling_skew_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(30).skew())
     # data_df['rolling_kurt_t30'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(30).kurt())
     
     # price features
-    data_df['lag_price_t1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
-    data_df['price_change_t1'] = (data_df['lag_price_t1'] - data_df['sell_price']) / (data_df['lag_price_t1'])
-    data_df['rolling_price_max_t365'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1).rolling(365).max())
-    data_df['price_change_t365'] = (data_df['rolling_price_max_t365'] - data_df['sell_price']) / (data_df['rolling_price_max_t365'])
-    data_df['rolling_price_std_t7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.rolling(7).std())
+    # data_df['lag_price_t1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
+    # data_df['price_change_t1'] = (data_df['lag_price_t1'] - data_df['sell_price']) / (data_df['lag_price_t1'])
+    # data_df['rolling_price_max_t365'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1).rolling(365).max())
+    # data_df['price_change_t365'] = (data_df['rolling_price_max_t365'] - data_df['sell_price']) / (data_df['rolling_price_max_t365'])
+    # data_df['rolling_price_std_t7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.rolling(7).std())
     # data_df['rolling_price_std_t30'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.rolling(30).std())
-    data_df.drop(['rolling_price_max_t365', 'lag_price_t1'], inplace = True, axis = 1)
+    # data_df.drop(['rolling_price_max_t365', 'lag_price_t1'], inplace = True, axis = 1)
 
     # time features
     data_df['date'] = pd.to_datetime(data_df['date'])
     data_df['year'] = data_df['date'].dt.year.astype(np.int16)
-    # data_df['quarter'] = data_df['date'].dt.quarter.astype(np.int8)
+    data_df['quarter'] = data_df['date'].dt.quarter.astype(np.int8)
     data_df['month'] = data_df['date'].dt.month.astype(np.int8)
-    # data_df['week'] = data_df['date'].dt.week.astype(np.int8)
-    # data_df['day'] = data_df['date'].dt.day.astype(np.int8)
+    data_df['week'] = data_df['date'].dt.week.astype(np.int8)
+    data_df['day'] = data_df['date'].dt.day.astype(np.int8)
     data_df['dayofweek'] = data_df['date'].dt.dayofweek.astype(np.int8)
     # data_df['is_year_end'] = data_df['date'].dt.is_year_end.astype(np.int8)
     # data_df['is_year_start'] = data_df['date'].dt.is_year_start.astype.astype(np.int8)
     # data_df['is_quarter_end'] = data_df['date'].dt.is_quarter_end.astype(np.int8)
     # data_df['is_quarter_start'] = data_df['date'].is_quarter_start.astype(np.int8)
-    data_df['is_month_end'] = data_df['date'].dt.is_month_end.astype(np.int8)
-    data_df['is_month_start'] = data_df['date'].dt.is_month_start.astype(np.int8)
-    data_df["is_weekend"] = data_df["dayofweek"].isin([5, 6]).astype(np.int8)
+    # data_df['is_month_end'] = data_df['date'].dt.is_month_end.astype(np.int8)
+    # data_df['is_month_start'] = data_df['date'].dt.is_month_start.astype(np.int8)
+    # data_df["is_weekend"] = data_df["dayofweek"].isin([5, 6]).astype(np.int8)
 
-    mean_sell_price_df = data_df.groupby('id').mean()
-    mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
-    data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
-    data_df["diff_sell_price"] = data_df["mean_sell_price"] - data_df["sell_price"]
-
+    # mean_sell_price_df = data_df.groupby('id').mean()
+    # mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
+    # data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
+    # data_df["diff_sell_price"] = data_df["mean_sell_price"] - data_df["sell_price"]
     print("[FINISH] feature engineering")
-    print(data_df.head(5))
-    # print(data_df.columns)
     
     return data_df
 
@@ -335,46 +344,45 @@ def data_split(data_df):
     y_val = X_val['demand']
 
     test = data_df[(data_df['date'] > '2016-04-24')]
-    
+
     del data_df
     gc.collect()
 
     return X_train, y_train, X_val, y_val, test
 
 
-def run_lgb(X_train, y_train, X_val, y_val, test):
+def run_lgb(X_train, y_train, X_val, y_val, test, date):
     # define list of features
-    # features = ['item_id', 'dept_id', 'cat_id', 'store_id', 'state_id', 'year', 'month', 'week', 'day', 'dayofweek', 
-    #             'event_name_1', 'event_type_1', 'event_name_2', 'event_type_2', 'snap_CA', 'snap_TX', 'snap_WI', 'sell_price', 
-    #             'lag_t28', 'lag_t29', 'lag_t30', 'rolling_mean_t7', 'rolling_std_t7', 'rolling_mean_t30', 'rolling_mean_t90', 
-    #             'rolling_mean_t180', 'rolling_std_t30', 'price_change_t1', 'price_change_t365', 'rolling_price_std_t7', 
-    #             'rolling_price_std_t30', 'rolling_skew_t30', 'rolling_kurt_t30']
-
     # 学習/予測に使用する特徴量
-    default_features = ['item_id', 'dept_id', 'cat_id', 'store_id', 'state_id',
-                        'event_name_1', 'event_type_1', 'snap_CA', 'snap_TX', 'snap_WI', 'sell_price']
-    demand_features = ['lag_t28', 'rolling_mean_t7', 'rolling_std_t7', 'rolling_mean_t30', 
-                       'rolling_std_t30', 'rolling_mean_t60', 'rolling_std_t90', 'rolling_std_t180']
-    price_features = ["price_change_t1", "price_change_t365", "rolling_price_std_t7", "diff_sell_price"]
-    time_features = ["year", "month", "dayofweek", "is_month_end", "is_month_start", "is_weekend"]
-    add_features = ['black_friday']
+    # default_features = ['item_id', 'dept_id', 'cat_id', 'store_id', 'state_id',
+    #                     'event_name_1', 'event_type_1', 'snap_CA', 'snap_TX', 'snap_WI', 'sell_price']
+    # demand_features = ['lag_t28', 'rolling_mean_t7', 'rolling_std_t7', 'rolling_mean_t30', 
+    #                    'rolling_std_t30', 'rolling_mean_t60', 'rolling_std_t90', 'rolling_std_t180']
+    # price_features = ["price_change_t1", "price_change_t365", "rolling_price_std_t7", "diff_sell_price"]
+    # time_features = ["year", "month", "dayofweek", "is_month_end", "is_month_start", "is_weekend"]
+    # add_features = ['black_friday']
+    # features = default_features + demand_features + price_features + time_features + add_features
 
-    features = default_features + demand_features + price_features + time_features + add_features
-    
+    default_features = ['item_id', 'dept_id', 'cat_id', 'state_id', 'event_name_1', 'snap_CA', 'snap_WI', 'sell_price']
+    demand_features = ['lag_28', 'rmean_lag28_t7', 'rmean_lag28_t28']
+    # demand_features = ['lag_28', 'lag_7', 'rmean_lag7_t7', 'rmean_lag7_t28', 'rmean_lag28_t7', 'rmean_lag28_t28']
+    time_features = ["year", "month", "week", "day", "dayofweek"]
+    features = default_features + demand_features + time_features
+    print("N_features: {}\n".format(len(features)))
+
     # define random hyperparammeters
     params = {'boosting_type': 'gbdt',
               'metric': 'rmse',
-              # 'objective': 'regression',
               'objective': "poisson",
               'n_jobs': -1,
-              'seed': 5046,
-              'max_depth': 8,  
-              'learning_rate': 0.05,
-              'alpha': 0.1,
-              'lambda': 1.0,
-              'min_child_weight': 1,
-              'subsample': 0.9,
-              'colsample_bytree': 1.0}
+              'seed': 5046, 
+              'learning_rate': 0.075,
+              'lambda_l2': 0.1,
+              'sub_feature': 0.8,
+              'sub_row': 0.75,
+              'bagging_freq':1}
+
+
 
     # datasetの作成
     train_set = lgb.Dataset(X_train[features], y_train)
@@ -382,17 +390,16 @@ def run_lgb(X_train, y_train, X_val, y_val, test):
 
     # train/validation
     print("\n[START] training model ->")
-    model = lgb.train(params, train_set, num_boost_round=3000, early_stopping_rounds=200, 
+    model = lgb.train(params, train_set, num_boost_round=2000, early_stopping_rounds=200, 
                       valid_sets=[train_set, val_set], verbose_eval=100)
+
     # save model
-    with open('model.pickle', mode='wb') as fp:
+    model_dir = "../model/"
+    model_name = "model_{}.pickle".format(date)
+    model_path = model_dir + model_name
+    os.makedirs(model_path, exist_ok=True)
+    with open(model_path + 'model.pickle', mode='wb') as fp:
         pickle.dump(model, fp)
-    
-    # feature ranking
-    # output_feature_ranking(model, features)
-    lgb.plot_importance(model, ax=None, height=0.2, xlim=None, ylim=None, title='Feature importance', 
-                        xlabel='Importance', ylabel='Features', importance_type='gain', max_num_features=None, 
-                        ignore_zero=True, figsize=None, dpi=None, grid=True, precision=3)
 
     # predict
     val_pred = model.predict(X_val[features], num_iteration = model.best_iteration)
@@ -400,36 +407,17 @@ def run_lgb(X_train, y_train, X_val, y_val, test):
     print(f'val RMSE score: {val_score}')
     
     # test for submission
-    y_pred = model.predict(test[features], num_iteration=model.best_iteration)
-    test['demand'] = y_pred
+    y_pred = model.predict(test[features])  # , num_iteration=model.best_iteration)
+    test['demand'] = 1.02 * y_pred
 
     return test
 
 
-def output_feature_ranking(model, features):
-    feature_importance_df = pd.DataFrame()
-    feature_importance_df["feature"] = features
-    feature_importance_df["importance"] = model.feature_importances_
-    feature_ranking_df = feature_importance_df.sort_values(by="importance", ascending=False).copy()
-    
-    fig, ax = plt.subplots(figsize=(14,12), tight_layout=True)
-    sns.set_palette("Blues_r", len(features))
-    sns.barplot(x="importance", y="feature", data=feature_ranking_df)
-
-    ax.set_xlabel("Importance(gain)", fontsize=30)
-    ax.set_ylabel("Features", fontsize=30)
-    ax.tick_params(direction = "out", left=True, bottom=True)
-    plt.tick_params(labelsize=25)
-    # plt.savefig("GBM_{}_importance.jpg".format(task))
-    plt.show()
-
-
-def result_submission(test, submission_df):
-    # output_dir = "../output/"
-    date = datetime.datetime.today().strftime("%Y%m%d_%H%M%S")
+def result_submission(test, submission_df, date):
+    output_dir = "../output/"
     submission_name = "submission_{}.csv".format(date)
-    # submission_path = output_dir + submission_name
-    # os.makedirs(output_dir, exist_ok=True)
+    submission_path = output_dir + submission_name
+    os.makedirs(output_dir, exist_ok=True)
 
     predictions = test[['id', 'date', 'demand']]
     predictions = pd.pivot(predictions, index = 'id', columns = 'date', values = 'demand').reset_index()
@@ -440,33 +428,32 @@ def result_submission(test, submission_df):
 
     validation = submission_df[['id']].merge(predictions, on = 'id')
     final = pd.concat([validation, evaluation])
-    final.to_csv(submission_name, index = False)
+    final.to_csv(submission_path, index = False)
     print("\ncompleted process.")
 
 
 def main():
     # read data
     t1 = time.time()
+    date = datetime.datetime.today().strftime("%Y%m%d_%H%M%S")
     calendar_df, sell_prices_df, train_df, submission_df = read_data()
 
     # preprocessing
-    data_df = melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df, nrows = 27500000)  #  nrows = 27500000
-    data_df = transform(data_df)
+    data_df = melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df)  #  nrows = 27500000
+    data_df = encode_categorical(data_df)
 
     # feature engineering
     data_df = feature_engineering(data_df)
     data_df = reduce_mem_usage(data_df)
-    print(data_df.head(5))
-    # print(data_df.columns)
 
     # data split
     X_train, y_train, X_val, y_val, test = data_split(data_df)
 
     # train/validation
-    test = run_lgb(X_train, y_train, X_val, y_val, test)
+    test = run_lgb(X_train, y_train, X_val, y_val, test, date)
 
     # submission
-    result_submission(test, submission_df)
+    result_submission(test, submission_df, date)
 
     t2 = time.time()
     print("\nspend time: {}[min]".format(str((t2 - t1) / 60)))
