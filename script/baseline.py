@@ -12,6 +12,7 @@ from typing import Union
 import matplotlib.pyplot as plt
 from sklearn import preprocessing, metrics
 from tqdm import tqdm
+from scipy.sparse import csr_matrix
 
 warnings.filterwarnings('ignore')
 """
@@ -19,96 +20,85 @@ NOTE
 very fast model created by @ragnar
 
 """
-
 class WRMSSEEvaluator(object):
 
-    def __init__(self, train_df: pd.DataFrame, valid_df: pd.DataFrame, calendar: pd.DataFrame, prices: pd.DataFrame):
-        train_y = train_df.loc[:, train_df.columns.str.startswith('d_')]
-        train_target_columns = train_y.columns.tolist()
-        weight_columns = train_y.iloc[:, -28:].columns.tolist()
+    def __init__(self, data, product, NUM_ITEMS, DAYS_PRED):
+        self.data = data
+        self.product = product
+        self.NUM_ITEMS = NUM_ITEMS
+        self.DAYS_PRED = DAYS_PRED
+    
+    def weight_calc(self):
 
-        train_df['all_id'] = 0  # for lv1 aggregation
+        weight_mat = np.c_[np.ones([self.NUM_ITEMS,1]).astype(np.int8), # level 1
+                        pd.get_dummies(self.product.state_id.astype(str),drop_first=False).astype('int8').values,
+                        pd.get_dummies(self.product.store_id.astype(str),drop_first=False).astype('int8').values,
+                        pd.get_dummies(self.product.cat_id.astype(str),drop_first=False).astype('int8').values,
+                        pd.get_dummies(self.product.dept_id.astype(str),drop_first=False).astype('int8').values,
+                        pd.get_dummies(self.product.state_id.astype(str) + self.product.cat_id.astype(str),drop_first=False).astype('int8').values,
+                        pd.get_dummies(self.product.state_id.astype(str) + self.product.dept_id.astype(str),drop_first=False).astype('int8').values,
+                        pd.get_dummies(self.product.store_id.astype(str) + self.product.cat_id.astype(str),drop_first=False).astype('int8').values,
+                        pd.get_dummies(self.product.store_id.astype(str), drop_first=False).astype('int8').values,
+                        pd.get_dummies(self.product.state_id.astype(str) + self.product.item_id.astype(str),drop_first=False).astype('int8').values,
+                        np.identity(self.NUM_ITEMS).astype(np.int8) #item :level 12
+                        ].T
+        weight_mat_csr = csr_matrix(weight_mat)
+        del weight_mat
+        gc.collect()
 
-        id_columns = train_df.loc[:, ~train_df.columns.str.startswith('d_')].columns.tolist()
-        valid_target_columns = valid_df.loc[:, valid_df.columns.str.startswith('d_')].columns.tolist()
+        # calculate the denominator of RMSSE, and calculate the weight base on sales amount
+        train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_validation.csv')
+        d_name = ['d_' + str(i+1) for i in range(1913)]
+        train_df = weight_mat_csr * train_df[d_name].values
 
-        if not all([c in valid_df.columns for c in id_columns]):
-            valid_df = pd.concat([train_df[id_columns], valid_df], axis=1, sort=False)
+        # calculate the start position(first non-zero demand observed date) for each item / 商品の最初の売上日
+        # 1-1914のdayの数列のうち, 売上が存在しない日を一旦0にし、0を9999に置換。そのうえでminimum numberを計算
+        df_tmp = ((train_df>0) * np.tile(np.arange(1,1914),(weight_mat_csr.shape[0],1)))
+        start_no = np.min(np.where(df_tmp==0,9999,df_tmp),axis=1)-1
+        flag = np.dot(np.diag(1/(start_no+1)) , np.tile(np.arange(1,1914),(weight_mat_csr.shape[0],1)))<1
+        sales_train_val = np.where(flag,np.nan,train_df)
 
-        self.train_df = train_df
-        self.valid_df = valid_df
-        self.calendar = calendar
-        self.prices = prices
+        # denominator of RMSSE / RMSSEの分母
+        weight1 = np.nansum(np.diff(train_df,axis=1)**2,axis=1)/(1913-start_no)
 
-        self.weight_columns = weight_columns
-        self.id_columns = id_columns
-        self.valid_target_columns = valid_target_columns
+        # calculate the sales amount for each item/level
+        df_tmp = self.data[(self.data['date'] > '2016-03-27') & (self.data['date'] <= '2016-04-24')]
+        df_tmp['amount'] = df_tmp['demand'] * df_tmp['sell_price']
+        df_tmp =df_tmp.groupby(['id'])['amount'].apply(np.sum)
+        df_tmp = df_tmp[self.product.id].values
+        
+        weight2 = weight_mat_csr * df_tmp 
+        weight2 = weight2/np.sum(weight2)
 
-        weight_df = self.get_weight_df()
+        del sales_train_val
+        gc.collect()
+        
+        return weight1, weight2, weight_mat_csr
 
-        self.group_ids = (
-            'all_id',
-            'state_id',
-            'store_id',
-            'cat_id',
-            'dept_id',
-            ['state_id', 'cat_id'],
-            ['state_id', 'dept_id'],
-            ['store_id', 'cat_id'],
-            ['store_id', 'dept_id'],
-            'item_id',
-            ['item_id', 'state_id'],
-            ['item_id', 'store_id']
-        )
 
-        for i, group_id in enumerate(tqdm(self.group_ids)):
-            train_y = train_df.groupby(group_id)[train_target_columns].sum()
-            scale = []
-            for _, row in train_y.iterrows():
-                series = row.values[np.argmax(row.values != 0):]
-                scale.append(((series[1:] - series[:-1]) ** 2).mean())
-            setattr(self, f'lv{i + 1}_scale', np.array(scale))
-            setattr(self, f'lv{i + 1}_train_df', train_y)
-            setattr(self, f'lv{i + 1}_valid_df', valid_df.groupby(group_id)[valid_target_columns].sum())
+    def wrmsse(self, preds, data):
+    
+        weight1, weight2, weight_mat_csr = self.weight_calc()
 
-            lv_weight = weight_df.groupby(group_id)[weight_columns].sum().sum(axis=1)
-            setattr(self, f'lv{i + 1}_weight', lv_weight / lv_weight.sum())
+        # this function is calculate for last 28 days to consider the non-zero demand period
+        # actual obserbed values / 正解ラベル
+        y_true = data.get_label()
+        y_true = y_true[-(self.NUM_ITEMS * self.DAYS_PRED):]
+        preds = preds[-(self.NUM_ITEMS * self.DAYS_PRED):]
 
-    def get_weight_df(self) -> pd.DataFrame:
-        day_to_week = self.calendar.set_index('d')['wm_yr_wk'].to_dict()
-        weight_df = self.train_df[['item_id', 'store_id'] + self.weight_columns].set_index(['item_id', 'store_id'])
-        weight_df = weight_df.stack().reset_index().rename(columns={'level_2': 'd', 0: 'value'})
-        weight_df['wm_yr_wk'] = weight_df['d'].map(day_to_week)
+        # number of columns
+        num_col = self.DAYS_PRED
+        
+        # reshape data to original array((NUM_ITEMS*num_col,1)->(NUM_ITEMS, num_col) ) / 推論の結果が 1 次元の配列になっているので直す
+        reshaped_preds = preds.reshape(num_col, self.NUM_ITEMS).T
+        reshaped_true = y_true.reshape(num_col, self.NUM_ITEMS).T
+        
+            
+        train = weight_mat_csr * np.c_[reshaped_preds, reshaped_true]
 
-        weight_df = weight_df.merge(self.prices, how='left', on=['item_id', 'store_id', 'wm_yr_wk'])
-        weight_df['value'] = weight_df['value'] * weight_df['sell_price']
-        weight_df = weight_df.set_index(['item_id', 'store_id', 'd']).unstack(level=2)['value']
-        weight_df = weight_df.loc[zip(self.train_df.item_id, self.train_df.store_id), :].reset_index(drop=True)
-        weight_df = pd.concat([self.train_df[self.id_columns], weight_df], axis=1, sort=False)
-        return weight_df
-
-    def rmsse(self, valid_preds: pd.DataFrame, lv: int) -> pd.Series:
-        valid_y = getattr(self, f'lv{lv}_valid_df')
-        score = ((valid_y - valid_preds) ** 2).mean(axis=1)
-        scale = getattr(self, f'lv{lv}_scale')
-        return (score / scale).map(np.sqrt)
-
-    def score(self, valid_preds: Union[pd.DataFrame, np.ndarray]) -> float:
-        assert self.valid_df[self.valid_target_columns].shape == valid_preds.shape
-
-        if isinstance(valid_preds, np.ndarray):
-            valid_preds = pd.DataFrame(valid_preds, columns=self.valid_target_columns)
-
-        valid_preds = pd.concat([self.valid_df[self.id_columns], valid_preds], axis=1, sort=False)
-
-        all_scores = []
-        for i, group_id in enumerate(self.group_ids):
-            lv_scores = self.rmsse(valid_preds.groupby(group_id)[self.valid_target_columns].sum(), i + 1)
-            weight = getattr(self, f'lv{i + 1}_weight')
-            lv_scores = pd.concat([weight, lv_scores], axis=1, sort=False).prod(axis=1)
-            all_scores.append(lv_scores.sum())
-
-        return np.mean(all_scores)
+        score = np.sum(np.sqrt(np.mean(np.square(train[:,:num_col] - train[:,num_col:]),axis=1) / weight1) * weight2)
+        
+        return 'wrmsse', score, False
 
 
 # メモリ使用量の削減
@@ -176,8 +166,7 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df):
     print("\n[CHECK] remove train data (only one year)")
 
     train_day = train_df["day"].unique()
-    print("train_data: {0} ~ {1}".format(train_day[0], train_day[-1]))
-    print(len(train_day))
+    print("train_data: {0} ~ {1} -> {2}".format(train_day[0], train_day[-1]), len(train_day))
 
     # seperate test dataframes
     valid_df = submission_df[submission_df["id"].str.contains("validation")]
@@ -192,8 +181,7 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df):
     valid_df = pd.melt(valid_df, id_vars = ['id', 'item_id', 'dept_id', 'cat_id', 'store_id', 'state_id'],
                        var_name = 'day', value_name = 'demand')
     valid_day = valid_df["day"].unique()
-    print("\nvalid_data: {0} ~ {1}".format(valid_day[0], valid_day[-1]))
-    print(len(valid_day))
+    print("\nvalid_data: {0} ~ {1} -> {2}".format(valid_day[0], valid_day[-1], len(valid_day)))
 
     # train_df, valid_dfと同様にeval_dfとproduct_dfをmergeさせたい
     # しかしidが_evaluationのままだとデータが一致せずmergeできないので一時的に_validationにidを変更
@@ -203,8 +191,7 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df):
     eval_df = pd.melt(eval_df, id_vars = ['id', 'item_id', 'dept_id', 'cat_id', 'store_id', 'state_id'],
                       var_name = 'day', value_name = 'demand')
     eval_day = eval_df["day"].unique()
-    print("\neval_data: {0} ~ {1}".format(eval_day[0], eval_day[-1]))
-    print(len(eval_day))
+    print("\neval_data: {0} ~ {1} -> {2}".format(eval_day[0], eval_day[-1], len(eval_day)))
 
     train_df['part'] = 'train'
     valid_df['part'] = 'valid'
@@ -227,15 +214,16 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df):
 
     # notebook crash with the entire dataset (maybee use tensorflow, dask, pyspark xD)
     data_df = pd.merge(data_df, calendar_df, how = 'left', left_on = ['day'], right_on = ['d'])
-    data_df.drop(['d', 'day'], inplace = True, axis = 1)
+    data_df.drop('d', inplace = True, axis = 1)
 
     # get the sell price data (this feature should be very important)
     data_df = data_df.merge(sell_prices_df, on = ['store_id', 'item_id', 'wm_yr_wk'], how = 'left')
     print("\n[INFO] data_df(after merge calendar & prices) ->")
-    print(data_df.head(5))
+    # print(data_df.head(5))
     # print(data_df.columns)
-    
-    return data_df
+
+
+    return data_df, product_df
 
 
 # label encoding
@@ -337,13 +325,13 @@ def feature_engineering(data_df):
 # 時系列データの時はold -> train/val/test -> new とする？
 def data_split(data_df):
     # going to evaluate with the last 28 days
-    X_train = data_df[data_df['date'] <= '2016-03-27']
+    X_train = data_df[data_df['day'] <= 'd_1885']
     y_train = X_train['demand']
 
-    X_val = data_df[(data_df['date'] > '2016-03-27') & (data_df['date'] <= '2016-04-24')]
+    X_val = data_df[(data_df['day'] > 'd_1885') & (data_df['date'] <= 'd_1913')]
     y_val = X_val['demand']
 
-    test = data_df[(data_df['date'] > '2016-04-24')]
+    test = data_df[(data_df['day'] > 'd_1913')]
 
     del data_df
     gc.collect()
@@ -351,7 +339,7 @@ def data_split(data_df):
     return X_train, y_train, X_val, y_val, test
 
 
-def run_lgb(X_train, y_train, X_val, y_val, test, date):
+def run_lgb(X_train, y_train, X_val, y_val, test, date, evaluator):
     # define list of features
     # 学習/予測に使用する特徴量
     # default_features = ['item_id', 'dept_id', 'cat_id', 'store_id', 'state_id',
@@ -372,7 +360,7 @@ def run_lgb(X_train, y_train, X_val, y_val, test, date):
 
     # define random hyperparammeters
     params = {'boosting_type': 'gbdt',
-              'metric': 'rmse',
+              'metric': 'custom',
               'objective': "poisson",
               'n_jobs': -1,
               'seed': 5046, 
@@ -388,10 +376,11 @@ def run_lgb(X_train, y_train, X_val, y_val, test, date):
     train_set = lgb.Dataset(X_train[features], y_train)
     val_set = lgb.Dataset(X_val[features], y_val)
 
+
     # train/validation
     print("\n[START] training model ->")
     model = lgb.train(params, train_set, num_boost_round=2000, early_stopping_rounds=200, 
-                      valid_sets=[train_set, val_set], verbose_eval=100)
+                      valid_sets=[train_set, val_set], verbose_eval=100, feval=evaluator.wrmsse)
 
     # save model
     model_dir = "../model/"
@@ -403,9 +392,13 @@ def run_lgb(X_train, y_train, X_val, y_val, test, date):
 
     # predict
     val_pred = model.predict(X_val[features], num_iteration = model.best_iteration)
-    val_score = np.sqrt(metrics.mean_squared_error(val_pred, y_val))
-    print(f'val RMSE score: {val_score}')
-    
+    val_RMSE_score = np.sqrt(metrics.mean_squared_error(val_pred, y_val))
+    print(f'val RMSE score: {val_RMSE_score}')
+
+    val_pred = model.predict(X_val[features], num_iteration = model.best_iteration)
+    val_WRMSSE_score = wrmsse(val_pred, y_val)
+    print(f'val RMSE score: {val_WRMSSE_score}')
+
     # test for submission
     y_pred = model.predict(test[features])  # , num_iteration=model.best_iteration)
     test['demand'] = 1.02 * y_pred
@@ -438,8 +431,12 @@ def main():
     date = datetime.datetime.today().strftime("%Y%m%d_%H%M%S")
     calendar_df, sell_prices_df, train_df, submission_df = read_data()
 
+    # 予測期間とitem数の定義 / number of items, and number of prediction period
+    NUM_ITEMS = train_df.shape[0]  # 30490
+    DAYS_PRED = submission_df.shape[1] - 1  # 28
+
     # preprocessing
-    data_df = melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df)  #  nrows = 27500000
+    data_df, product_df = melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df)  #  nrows = 27500000
     data_df = encode_categorical(data_df)
 
     # feature engineering
@@ -449,8 +446,11 @@ def main():
     # data split
     X_train, y_train, X_val, y_val, test = data_split(data_df)
 
+    # evaluater
+    evaluator = WRMSSEEvaluator(data_df, product_df, NUM_ITEMS, DAYS_PRED)
+
     # train/validation
-    test = run_lgb(X_train, y_train, X_val, y_val, test, date)
+    test = run_lgb(X_train, y_train, X_val, y_val, test, date, evaluator)
 
     # submission
     result_submission(test, submission_df, date)
