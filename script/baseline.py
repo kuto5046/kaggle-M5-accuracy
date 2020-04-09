@@ -123,8 +123,6 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df, num_tra
 
     data_df = pd.concat([train_df, stage1_eval_df, stage2_eval_df], axis=0)
     data_df = reduce_mem_usage(data_df)
-    # print("\n[INFO] data_df(after merge valid & eval) ->")
-    # data_df.head()
 
     # 不要なdataframeの削除
     del train_df, stage1_eval_df, stage2_eval_df, product_df
@@ -142,9 +140,6 @@ def melt_and_merge(calendar_df, sell_prices_df, train_df, submission_df, num_tra
 
     # get the sell price data (this feature should be very important)
     data_df = data_df.merge(sell_prices_df, on=['store_id', 'item_id', 'wm_yr_wk'], how='left')
-    # print("\n[INFO] data_df(after merge calendar & prices) ->")
-    # print(data_df.head(5))
-    # print(data_df.columns)
 
     return data_df
 
@@ -186,6 +181,7 @@ def feature_engineering(data_df):
     """
 
     # ラグ特徴量
+    data_df['lag1'] = data_df.groupby(['id'])['demand'].shift(1)
     data_df['lag7'] = data_df.groupby(['id'])['demand'].shift(7)
     data_df['lag28'] = data_df.groupby(['id'])['demand'].shift(28)
     data_df['rmean_lag7_7'] = data_df.groupby(['id'])['lag7'].transform(lambda x: x.rolling(7).mean())
@@ -194,14 +190,14 @@ def feature_engineering(data_df):
     data_df['rmean_lag28_28'] = data_df.groupby(['id'])['lag28'].transform(lambda x: x.rolling(28).mean())
 
     # price features
-    data_df['sell_price_lag1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
-    data_df['sell_price_lag7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(7))
-    data_df['sell_price_lag28'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(28))
-    mean_sell_price_df = data_df.groupby('id').mean()
-    mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
-    data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
-    data_df["diff_sell_price"] = data_df["sell_price"] - data_df["mean_sell_price"]
-    data_df["div_sell_price"] = data_df["sell_price"] / data_df["mean_sell_price"]
+    # data_df['sell_price_lag1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
+    # data_df['sell_price_lag7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(7))
+    # data_df['sell_price_lag28'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(28))
+    # mean_sell_price_df = data_df.groupby('id').mean()
+    # mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
+    # data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
+    # data_df["diff_sell_price"] = data_df["sell_price"] - data_df["mean_sell_price"]
+    # data_df["div_sell_price"] = data_df["sell_price"] / data_df["mean_sell_price"]
 
     # time features
     data_df['date'] = pd.to_datetime(data_df['date'])
@@ -220,9 +216,9 @@ def feature_engineering(data_df):
     # data_df["is_weekend"] = data_df["dayofweek"].isin([5, 6]).astype(np.int8)
 
     # black friday
-    black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
-    data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
-    data_df["black_friday"] = data_df["black_friday"].astype(np.int8)
+    # black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
+    # data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
+    # data_df["black_friday"] = data_df["black_friday"].astype(np.int8)
 
     # lag特徴量によって欠損している部分を削除
     data_df.dropna(inplace = True)
@@ -233,6 +229,7 @@ def feature_engineering(data_df):
 
 # 交差検証はランダムサンプリングで疑似的に行う
 def train_val_split(train_df):
+
     # train data
     X_train = train_df[train_df['part'] <= 'train']
     y_train = X_train['demand']
@@ -274,7 +271,6 @@ def train_lgb(X_train, y_train, X_val, y_val, features, date):
     # define random hyperparammeters
     params = {'boosting_type': 'gbdt',
               'metric': 'rmse',
-              "force_row_wise" : True,
               'objective': "poisson",
               'n_jobs': -1,
               'seed': 5046,
@@ -290,8 +286,8 @@ def train_lgb(X_train, y_train, X_val, y_val, features, date):
 
     # train/validation
     print("\n[START] training model ->")
-    model = lgb.train(params, train_set, num_boost_round=2500,  # early_stopping_rounds=200,
-                      valid_sets=[train_set, val_set], verbose_eval=100)
+    model = lgb.train(params, train_set, num_boost_round=1500,  # early_stopping_rounds=200,
+                      valid_sets=val_set, verbose_eval=100)
 
     # save model
     model_dir = "../model/{}/".format(date[:8])
@@ -308,20 +304,24 @@ def train_lgb(X_train, y_train, X_val, y_val, features, date):
     return model
 
 
-# 1日ずつ予測していく
-def predict_lgb(model, test_df, features):
+# min_lag日ずつ予測していく
+def predict_lgb(model, test_df, features, min_lag):
     train_day = test_df[test_df["part"]=="train"]["day"].unique()  # 特徴量作成のための部分
     stage1_day = test_df[test_df["part"]=="stage1"]["day"].unique()  # 実際に予測する部分
     print("[START] predict ->")
-
+    num_trials = int(len(stage1_day) / min_lag)  # 試行回数
     alpha = 1.02
-    for i in tqdm(range(28)):
-        target_day = np.append(train_day, stage1_day[:i+1])  # 対象の指定(1日ずつ対象範囲を広げていく)
+
+    for i in tqdm(range(num_trials)):
+        target_day = np.append(train_day, stage1_day[:(i + 1) * min_lag])  # 対象の指定(min_lag日ずつ対象範囲を広げていく)
         partial_test = test_df[test_df["day"].isin(target_day)].copy()  # 該当するデータを抽出
         partial_test = feature_engineering(partial_test)
-        partial_test = partial_test[partial_test["day"] == stage1_day[i]]  # 予測対象のみ抜粋(1日)
+        pred_target_day = stage1_day[i * min_lag:(i + 1) * min_lag]
+    
+        partial_test = partial_test[partial_test["day"].isin(pred_target_day)]  # 予測対象のみ抜粋(1日)
         partial_pred = model.predict(partial_test[features])
-        test_df.loc[test_df["day"]==stage1_day[i], "demand"] = alpha * partial_pred
+
+        test_df.loc[test_df["day"].isin(pred_target_day), "demand"] = alpha * partial_pred
 
     return test_df[test_df["part"]=="stage1"]
 
@@ -347,7 +347,10 @@ def result_submission(test_df, submission_df, date):
 
 def main():
     # 変更パラメータ
-    num_train_data = 1000  # 421 = 365 + 28*2
+    num_train_data = 1114  # 421 = 365 + 28*2
+    min_lag = 1
+    is_train = True  # Trueならモデルを訓練 Falseなら既存モデルを利用
+    pretrained_model = "../model/20200408/model_184240.pickle"
 
     # read data
     t1 = time.time()
@@ -362,30 +365,32 @@ def main():
     train_df, test_df = data_split(data_df)
 
     # feature engineering
-    print("\n[START] feature engineering ->")
-    train_df = feature_engineering(train_df)
-    print("[FINISH] feature engineering")
+    if is_train:
+        print("\n[START] feature engineering ->")
+        train_df = feature_engineering(train_df)
+        print("[FINISH] feature engineering")
 
-    # train/val split
-    X_train, y_train, X_val, y_val = train_val_split(train_df)
+        # train/val split
+        X_train, y_train, X_val, y_val = train_val_split(train_df)
 
     # define list of features
     default_features = ['item_id', 'dept_id', 'store_id','cat_id', 'state_id', 'event_name_1', 'event_type_1',
                         'event_name_2', 'event_type_1', 'snap_CA', 'snap_TX', 'snap_WI', 'sell_price']
-    demand_features = ['lag7', 'lag28', 'rmean_lag7_7', 'rmean_lag7_28', 'rmean_lag28_7', 'rmean_lag28_28']
+    demand_features = ['lag1', 'lag7', 'lag28', 'rmean_lag7_7', 'rmean_lag7_28', 'rmean_lag28_7', 'rmean_lag28_28']
     # price_features = ['sell_price_lag1', 'sell_price_lag7', 'sell_price_lag28', "diff_sell_price", "div_sell_price"]
-    time_features = ["year", "month", "week", "quarter", "mday", "wday", "black_friday"]
-    features = default_features + demand_features + time_features  # price_features 
+    time_features = ["year", "month", "week", "quarter", "mday", "wday"]  # , "black_friday"]
+    features = default_features + demand_features + time_features  # + price_features 
     print("N_features: {}\n".format(len(features)))
 
     # train
-    model = train_lgb(X_train, y_train, X_val, y_val, features, date)
-
-    # with open("../model/20200408/model_124001.pickle", mode='rb') as fp:
-    #     model = pickle.load(fp)
+    if is_train:
+        model = train_lgb(X_train, y_train, X_val, y_val, features, date)
+    else:
+        with open(pretrained_model, mode='rb') as fp:
+            model = pickle.load(fp)
 
     # predict
-    test_df = predict_lgb(model, test_df, features)
+    test_df = predict_lgb(model, test_df, features, min_lag)
 
     # submission
     result_submission(test_df, submission_df, date)

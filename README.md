@@ -25,5 +25,15 @@ eval: d_1942 ~ d_1969
 店舗数 10(CA:4, Tx:3, WI:3)
 
 ### Discussion & knowleadge
-(2020/3/30)  
-- 
+ 
+[M5 forecast 2 python](https://www.kaggle.com/kneroma/m5-forecast-v2-python)  
+検証はダミーで行う  
+テストのlag特徴量を1日ずつ作成してpredict  
+
+
+### MEMO
+4/8  
+特徴量を追加することで結果が悪くなることが多い  
+ノイズとなっている特徴量がある or leakの可能性  
+いずれにしても現在のコードに交差検証の方法を確立しないと方針が立てにくい  
+
