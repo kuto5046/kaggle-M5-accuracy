@@ -23,6 +23,7 @@ TODO validデータのおいて現在の予測と正解が最も乖離してい�
 class WRMSSEEvaluator(object):
 
     def __init__(self, train_df: pd.DataFrame, valid_df: pd.DataFrame, calendar: pd.DataFrame, prices: pd.DataFrame):
+        
         train_y = train_df.loc[:, train_df.columns.str.startswith('d_')]
         train_target_columns = train_y.columns.tolist()
         weight_columns = train_y.iloc[:, -28:].columns.tolist()
@@ -94,6 +95,7 @@ class WRMSSEEvaluator(object):
         return (score / scale).map(np.sqrt)
 
     def score(self, valid_preds: Union[pd.DataFrame, np.ndarray]) -> float:
+        valid_preds = valid_preds.reshape(self.valid_target_columns.shape[0], self.valid_target_columns.shape[1])
         assert self.valid_df[self.valid_target_columns].shape == valid_preds.shape
 
         if isinstance(valid_preds, np.ndarray):
@@ -109,6 +111,10 @@ class WRMSSEEvaluator(object):
             all_scores.append(lv_scores.sum())
 
         return np.mean(all_scores)
+
+    def feval(self, preds, dtrain):
+        score = self.score(preds)
+        return 'WRMSSE', score, False
 
 
 # function to read the data and merge it
@@ -200,35 +206,6 @@ def feature_engineering(data_df):
     return data_df
 
 
-# 交差検証はランダムサンプリングで疑似的に行う
-# TODO validationの工夫
-# def train_val_split(train_df, features):
-
-#     # train data
-#     X_train = train_df[features]
-#     y_train = train_df['demand']
-
-#     # valid data
-#     # This is just a subsample of the training set, not a real validation set !
-#     print("\n[CHECK] This valid data is not a real valid data, just random sampling data from train data!")
-
-#     fake_valid_inds = np.random.choice(len(X_train), 2000000, replace=False)
-#     train_inds = np.setdiff1d(X_train.index.values, fake_valid_inds)
-
-#     X_train = X_train.loc[train_inds]
-#     X_train = y_train.loc[train_inds]
-#     X_val = X_train.iloc[fake_valid_inds]
-#     y_val = y_train.iloc[fake_valid_inds]
-
-#     print("train:{}".format(len(X_train)/(len(X_train)+len(X_val))))
-#     print("valid:{}".format(len(X_val)/(len(X_train)+len(X_val))))
-
-#     del train_df
-#     gc.collect()
-
-#     return X_train, y_train, X_val, y_val
-
-
 def train_val_split(train_df):
     print("train/valid split ->")
 
@@ -250,22 +227,27 @@ def train_val_split(train_df):
     return X_train, y_train, X_val, y_val
 
 
-def evaluate_WRMSSE():
-    train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_validation.csv')
-    calendar_df = pd.read_csv("../input/m5-forecasting-accuracy/calendar.csv")
-    sell_prices_df = pd.read_csv("../input/m5-forecasting-accuracy/sell_prices.csv")
-    train_df.sort_values("id", inplace=True).reset_index(drop=True)
-    train_fold_df = train_df.iloc[:, :-28]
-    valid_fold_df = train_df.iloc[:, -28:]
-    del train_df
-    gc.collect()
+# def evaluate_WRMSSE(val_pred):
+#     train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_validation.csv')
+#     calendar_df = pd.read_csv("../input/m5-forecasting-accuracy/calendar.csv")
+#     sell_prices_df = pd.read_csv("../input/m5-forecasting-accuracy/sell_prices.csv")
 
-    val_pred = valid_fold_df.copy() + np.random.randint(100, size=valid_fold_df.shape)
-    evaluator = WRMSSEEvaluator(train_fold_df, valid_fold_df, calendar_df, sell_prices_df)
-    return evaluator.score(val_pred)
+#     train_df = train_df.sort_values("id").reset_index(drop=True)
+#     train_fold_df = train_df.iloc[:, :-28]
+#     valid_fold_df = train_df.iloc[:, -28:]
+#     del train_df
+#     gc.collect()
+
+#     evaluator = WRMSSEEvaluator(train_fold_df, valid_fold_df, calendar_df, sell_prices_df)
+    
+#     val_pred = val_pred.reshape(valid_fold_df.shape[0], valid_fold_df.shape[1])
+#     columns = valid_fold_df.columns
+#     val_pred = pd.DataFrame(val_pred, columns=columns)
+
+#     return evaluator.score(val_pred)
 
 
-def train_lgb(X_train, y_train, X_val, y_val, features, date):
+def train_lgb(X_train, y_train, X_val, y_val, features, evaluator, date):
     # define random hyperparammeters
     params = {'boosting_type': 'gbdt',
               'metric': 'rmse',
@@ -287,7 +269,7 @@ def train_lgb(X_train, y_train, X_val, y_val, features, date):
 
     # train/validation
     print("\n[START] training model ->")
-    model = lgb.train(params, train_set, num_boost_round=1200, valid_sets=val_set, verbose_eval=100)
+    model = lgb.train(params, train_set, num_boost_round=1200, valid_sets=val_set, feval=evaluator.feval, verbose_eval=100)
 
     # save model
     model_dir = "../model/{}/".format(date[:8])
@@ -300,8 +282,8 @@ def train_lgb(X_train, y_train, X_val, y_val, features, date):
     val_pred = model.predict(X_val[features])
     val_RMSE_score = np.sqrt(metrics.mean_squared_error(val_pred, y_val))
     print(f'val RMSE score: {val_RMSE_score}')
-    # val_WRMSSE_score = evaluate_WRMSSE()
-    # print(f'val WRMSSE score: {val_WRMSSE_score}')
+    val_WRMSSE_score = evaluator.score(val_pred)
+    print(f'val WRMSSE score: {val_WRMSSE_score}')
 
     return model
 
@@ -345,7 +327,7 @@ def main():
     t1 = time.time()
     date = datetime.today().strftime("%Y%m%d_%H%M%S")
 
-    data_df = create_data(is_train=True, num_train_day=1500)
+    data_df = create_data(is_train=True, num_train_day =1500)
     data_df = feature_engineering(data_df)
 
     # define list of features
@@ -360,8 +342,20 @@ def main():
     # train/val split
     X_train, y_train, X_val, y_val = train_val_split(data_df)
     
+    # evaluator
+    train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_validation.csv')
+    calendar_df = pd.read_csv("../input/m5-forecasting-accuracy/calendar.csv")
+    sell_prices_df = pd.read_csv("../input/m5-forecasting-accuracy/sell_prices.csv")
+    train_df = train_df.sort_values("id").reset_index(drop=True)
+    train_fold_df = train_df.iloc[:, :-28]
+    valid_fold_df = train_df.iloc[:, -28:]
+    del train_df
+    gc.collect()
+
+    evaluator = WRMSSEEvaluator(train_fold_df, valid_fold_df, calendar_df, sell_prices_df)
+
     # train
-    model = train_lgb(X_train, y_train, X_val, y_val, features, date)
+    model = train_lgb(X_train, y_train, X_val, y_val, features, evaluator, date)
     # with open(pretrained_model, mode='rb') as fp:
     #     model = pickle.load(fp)
 
