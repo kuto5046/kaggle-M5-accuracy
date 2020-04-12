@@ -65,84 +65,43 @@ def create_data(is_train, num_train_day):
     
     return data_df
 
+
 def feature_engineering(data_df):
-    lags = [7, 28]
-    lag_cols = [f"lag{lag}" for lag in lags ]
-    for lag, lag_col in zip(lags, lag_cols):
-        data_df[lag_col] = data_df[["id","demand"]].groupby("id")["demand"].shift(lag)
+    # lag features
+    # data_df['lag1'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(1)
+    data_df['lag7'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(7)
+    data_df['lag28'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(28)
 
-    wins = [7, 28]
-    for win in wins :
-        for lag,lag_col in zip(lags, lag_cols):
-            data_df[f"rmean_lag{lag}_{win}"] = data_df[["id", lag_col]].groupby("id")[lag_col].transform(lambda x : x.rolling(win).mean())
-    
-    date_features = {"wday": "weekday",
-                     "week": "weekofyear",
-                     "month": "month",
-                     "quarter": "quarter",
-                     "year": "year",
-                     "mday": "day"}
-    
-    for date_feat_name, date_feat_func in date_features.items():
-        if date_feat_name in data_df.columns:
-            data_df[date_feat_name] = data_df[date_feat_name].astype("int16")
-        else:
-            data_df[date_feat_name] = getattr(data_df["date"].dt, date_feat_func).astype("int16")
+    # data_df["rmean_lag1_7"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(7).mean())
+    # data_df["rmean_lag1_28"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(28).mean())
+    data_df["rmean_lag7_7"] = data_df[["id", "lag7"]].groupby("id")["lag7"].transform(lambda x : x.rolling(7).mean())
+    data_df["rmean_lag7_28"] = data_df[["id", "lag7"]].groupby("id")["lag7"].transform(lambda x : x.rolling(28).mean())
+    data_df["rmean_lag28_7"] = data_df[["id", "lag28"]].groupby("id")["lag28"].transform(lambda x : x.rolling(7).mean())
+    data_df["rmean_lag28_28"] = data_df[["id", "lag28"]].groupby("id")["lag28"].transform(lambda x : x.rolling(28).mean())
+
+    # price features
+    # data_df['sell_price_lag1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
+    # data_df['sell_price_lag7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(7))
+    # data_df['sell_price_lag28'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(28))
+    # mean_sell_price_df = data_df.groupby('id').mean()
+    # mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
+    # data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
+    # data_df["diff_sell_price"] = data_df["sell_price"] - data_df["mean_sell_price"]
+    # data_df["div_sell_price"] = data_df["sell_price"] / data_df["mean_sell_price"]
+
+    # time features
+    data_df['year'] = data_df['date'].dt.year.astype(np.int16)
+    data_df['quarter'] = data_df['date'].dt.quarter.astype(np.int8)
+    data_df['month'] = data_df['date'].dt.month.astype(np.int8)
+    data_df['week'] = data_df['date'].dt.week.astype(np.int8)
+    data_df['mday'] = data_df['date'].dt.day.astype(np.int8)
+    data_df['wday'] = data_df['date'].dt.dayofweek.astype(np.int8)
+
+    # black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
+    # data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
+    # data_df["black_friday"] = data_df["black_friday"].astype(np.int8)
+
     return data_df
-
-
-
-# def feature_engineering(data_df):
-#     """
-#     1日後のリード特徴量
-#     1日前のラグ特徴量
-#     """
-#     print("\n[START] feature engineering ->")
-
-#     # ラグ特徴量
-#     data_df['lag1'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(1))
-#     data_df['lag7'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(7))
-#     data_df['lag28'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28))
-#     data_df['rmean_lag7_7'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(7).rolling(7).mean())
-#     data_df['rmean_lag7_28'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(7).rolling(28).mean())
-#     data_df['rmean_lag28_7'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(7).mean())
-#     data_df['rmean_lag28_28'] = data_df.groupby(['id'])['demand'].transform(lambda x: x.shift(28).rolling(28).mean())
-
-#     # price features
-#     # data_df['sell_price_lag1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
-#     # data_df['sell_price_lag7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(7))
-#     # data_df['sell_price_lag28'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(28))
-#     # mean_sell_price_df = data_df.groupby('id').mean()
-#     # mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
-#     # data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
-#     # data_df["diff_sell_price"] = data_df["sell_price"] - data_df["mean_sell_price"]
-#     # data_df["div_sell_price"] = data_df["sell_price"] / data_df["mean_sell_price"]
-
-#     # time features
-#     data_df['date'] = pd.to_datetime(data_df['date'])
-#     data_df['year'] = data_df['date'].dt.year.astype(np.int16)
-#     data_df['quarter'] = data_df['date'].dt.quarter.astype(np.int8)
-#     data_df['month'] = data_df['date'].dt.month.astype(np.int8)
-#     data_df['week'] = data_df['date'].dt.week.astype(np.int8)
-#     data_df['mday'] = data_df['date'].dt.day.astype(np.int8)
-#     data_df['wday'] = data_df['date'].dt.dayofweek.astype(np.int8)
-#     # data_df['is_year_end'] = data_df['date'].dt.is_year_end.astype(np.int8)
-#     # data_df['is_year_start'] = data_df['date'].dt.is_year_start.astype.astype(np.int8)
-#     # data_df['is_quarter_end'] = data_df['date'].dt.is_quarter_end.astype(np.int8)
-#     # data_df['is_quarter_start'] = data_df['date'].is_quarter_start.astype(np.int8)
-#     # data_df['is_month_end'] = data_df['date'].dt.is_month_end.astype(np.int8)
-#     # data_df['is_month_start'] = data_df['date'].dt.is_month_start.astype(np.int8)
-#     # data_df["is_weekend"] = data_df["dayofweek"].isin([5, 6]).astype(np.int8)
-
-#     # black friday
-#     # black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
-#     # data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
-#     # data_df["black_friday"] = data_df["black_friday"].astype(np.int8)
-
-#     # lag特徴量によって欠損している部分を削除
-#     data_df.dropna(inplace = True)
-
-#     return data_df
 
 
 # 交差検証はランダムサンプリングで疑似的に行う
@@ -157,17 +116,14 @@ def train_val_split(train_df, features):
     # This is just a subsample of the training set, not a real validation set !
     print("\n[CHECK] This valid data is not a real valid data, just random sampling data from train data!")
 
-    # fake_valid_inds = np.random.choice(X_train.index.values, 2_000_000, replace = False)
-    # train_inds = np.setdiff1d(X_train.index.values, fake_valid_inds)
+    fake_valid_inds = np.random.choice(len(X_train), 2000000, replace=False)
+    train_inds = np.setdiff1d(X_train.index.values, fake_valid_inds)
 
-    fake_valid_inds = np.random.choice(len(X_train), 1000000)
+    X_train = X_train.loc[train_inds]
+    X_train = y_train.loc[train_inds]
     X_val = X_train.iloc[fake_valid_inds]
     y_val = y_train.iloc[fake_valid_inds]
 
-    # X_train = X_train.loc[train_inds]
-    # X_train = y_train.loc[train_inds]
-    # X_val = X_train.loc[fake_valid_inds]
-    # y_val = y_train.loc[fake_valid_inds]
     print("train:{}".format(len(X_train)/(len(X_train)+len(X_val))))
     print("valid:{}".format(len(X_val)/(len(X_train)+len(X_val))))
 
@@ -175,6 +131,8 @@ def train_val_split(train_df, features):
     gc.collect()
 
     return X_train, y_train, X_val, y_val
+
+
 
 
 def train_lgb(X_train, y_train, X_val, y_val, date):
