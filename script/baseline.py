@@ -95,7 +95,7 @@ class WRMSSEEvaluator(object):
         return (score / scale).map(np.sqrt)
 
     def score(self, valid_preds: Union[pd.DataFrame, np.ndarray]) -> float:
-        valid_preds = valid_preds.reshape(self.valid_target_columns.shape[0], self.valid_target_columns.shape[1])
+        valid_preds = valid_preds.reshape(30490, 28)
         assert self.valid_df[self.valid_target_columns].shape == valid_preds.shape
 
         if isinstance(valid_preds, np.ndarray):
@@ -170,26 +170,26 @@ def create_data(is_train, num_train_day):
 
 def feature_engineering(data_df):
     # lag features
-    # data_df['lag1'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(1)
+    data_df['lag1'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(1)
     data_df['lag7'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(7)
     data_df['lag28'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(28)
 
-    # data_df["rmean_lag1_7"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(7).mean())
-    # data_df["rmean_lag1_28"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(28).mean())
+    data_df["rmean_lag1_7"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(7).mean())
+    data_df["rmean_lag1_28"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(28).mean())
     data_df["rmean_lag7_7"] = data_df[["id", "lag7"]].groupby("id")["lag7"].transform(lambda x : x.rolling(7).mean())
     data_df["rmean_lag7_28"] = data_df[["id", "lag7"]].groupby("id")["lag7"].transform(lambda x : x.rolling(28).mean())
     data_df["rmean_lag28_7"] = data_df[["id", "lag28"]].groupby("id")["lag28"].transform(lambda x : x.rolling(7).mean())
     data_df["rmean_lag28_28"] = data_df[["id", "lag28"]].groupby("id")["lag28"].transform(lambda x : x.rolling(28).mean())
 
     # price features
-    # data_df['sell_price_lag1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
-    # data_df['sell_price_lag7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(7))
-    # data_df['sell_price_lag28'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(28))
-    # mean_sell_price_df = data_df.groupby('id').mean()
-    # mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
-    # data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
-    # data_df["diff_sell_price"] = data_df["sell_price"] - data_df["mean_sell_price"]
-    # data_df["div_sell_price"] = data_df["sell_price"] / data_df["mean_sell_price"]
+    data_df['sell_price_lag1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
+    data_df['sell_price_lag7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(7))
+    data_df['sell_price_lag28'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(28))
+    mean_sell_price_df = data_df.groupby('id').mean()
+    mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
+    data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
+    data_df["diff_sell_price"] = data_df["sell_price"] - data_df["mean_sell_price"]
+    data_df["div_sell_price"] = data_df["sell_price"] / data_df["mean_sell_price"]
 
     # time features
     data_df['year'] = data_df['date'].dt.year.astype(np.int16)
@@ -199,9 +199,9 @@ def feature_engineering(data_df):
     data_df['mday'] = data_df['date'].dt.day.astype(np.int8)
     data_df['wday'] = data_df['date'].dt.dayofweek.astype(np.int8)
 
-    # black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
-    # data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
-    # data_df["black_friday"] = data_df["black_friday"].astype(np.int8)
+    black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
+    data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
+    data_df["black_friday"] = data_df["black_friday"].astype(np.int8)
 
     return data_df
 
@@ -269,7 +269,7 @@ def train_lgb(X_train, y_train, X_val, y_val, features, evaluator, date):
 
     # train/validation
     print("\n[START] training model ->")
-    model = lgb.train(params, train_set, num_boost_round=1200, valid_sets=val_set, feval=evaluator.feval, verbose_eval=100)
+    model = lgb.train(params, train_set, num_boost_round=1200, valid_sets=val_set, verbose_eval=100)
 
     # save model
     model_dir = "../model/{}/".format(date[:8])
@@ -327,16 +327,18 @@ def main():
     t1 = time.time()
     date = datetime.today().strftime("%Y%m%d_%H%M%S")
 
-    data_df = create_data(is_train=True, num_train_day =1500)
+    data_df = create_data(is_train=True, num_train_day = 1500)
+    
+    print("\n[START] feature engineering ->")
     data_df = feature_engineering(data_df)
 
     # define list of features
     default_features = ['item_id', 'dept_id', 'store_id','cat_id', 'state_id', 'event_name_1', 'event_type_1',
                         'event_name_2', 'event_type_2', 'snap_CA', 'snap_TX', 'snap_WI', 'sell_price']
-    demand_features = ['lag7', 'lag28', 'rmean_lag7_7', 'rmean_lag7_28', 'rmean_lag28_7', 'rmean_lag28_28']
-    # price_features = ['sell_price_lag1', 'sell_price_lag7', 'sell_price_lag28', "diff_sell_price", "div_sell_price"]
-    time_features = ["year", "month", "week", "quarter", "mday", "wday"]  # , "black_friday"]
-    features = default_features + demand_features + time_features  # + price_features 
+    demand_features = ['lag1', 'lag7', 'lag28', 'rmean_lag1_7', 'rmean_lag1_28', 'rmean_lag7_7', 'rmean_lag7_28', 'rmean_lag28_7', 'rmean_lag28_28']
+    price_features = ['sell_price_lag1', 'sell_price_lag7', 'sell_price_lag28', "diff_sell_price", "div_sell_price"]
+    time_features = ["year", "month", "week", "quarter", "mday", "wday", "black_friday"]
+    features = default_features + demand_features + time_features + price_features 
     print("N_features: {}\n".format(len(features)))
 
     # train/val split
