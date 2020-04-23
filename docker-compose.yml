@@ -1,0 +1,12 @@
+version: "3"
+services:
+  python:
+    build: .
+    volumes:
+      - $PWD:/work/
+    working_dir: /work/
+    ports:
+      - 8888:8888
+    hostname: Docker5046
+    container_name: ubuntu18
+    command: jupyter notebook --ip=0.0.0.0 --allow-root --no-browser

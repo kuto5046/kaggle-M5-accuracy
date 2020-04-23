@@ -16,9 +16,7 @@ from tqdm import tqdm
 from scipy.sparse import csr_matrix
 
 warnings.filterwarnings('ignore')
-"""
-TODO validデータのおいて現在の予測と正解が最も乖離しているアイテムは何かをEDA
-"""
+
 
 class WRMSSEEvaluator(object):
 
@@ -95,7 +93,9 @@ class WRMSSEEvaluator(object):
         return (score / scale).map(np.sqrt)
 
     def score(self, valid_preds: Union[pd.DataFrame, np.ndarray]) -> float:
+        # TODO reshapeだけではおそらくダメ
         valid_preds = valid_preds.reshape(30490, 28)
+
         assert self.valid_df[self.valid_target_columns].shape == valid_preds.shape
 
         if isinstance(valid_preds, np.ndarray):
@@ -125,7 +125,7 @@ def create_data(is_train, num_train_day):
                 "month": "int16", "year": "int16", "snap_CA": "float32", 'snap_TX': 'float32', 'snap_WI': 'float32' }
     PRICE_DTYPES = {"store_id": "category", "item_id": "category", "wm_yr_wk": "int16","sell_price":"float32" }
 
-    print("\n[STSRT] read data ->")
+    print("\n[START] read data ->")
     sell_prices_df = pd.read_csv("../input/m5-forecasting-accuracy/sell_prices.csv", dtype = PRICE_DTYPES)
     for col, col_dtype in PRICE_DTYPES.items():
         if col_dtype == "category":
@@ -170,26 +170,26 @@ def create_data(is_train, num_train_day):
 
 def feature_engineering(data_df):
     # lag features
-    data_df['lag1'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(1)
+    # data_df['lag1'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(1)
     data_df['lag7'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(7)
     data_df['lag28'] = data_df[["id", "demand"]].groupby('id')['demand'].shift(28)
 
-    data_df["rmean_lag1_7"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(7).mean())
-    data_df["rmean_lag1_28"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(28).mean())
+    # data_df["rmean_lag1_7"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(7).mean())
+    # data_df["rmean_lag1_28"] = data_df[["id", "lag1"]].groupby("id")["lag1"].transform(lambda x : x.rolling(28).mean())
     data_df["rmean_lag7_7"] = data_df[["id", "lag7"]].groupby("id")["lag7"].transform(lambda x : x.rolling(7).mean())
     data_df["rmean_lag7_28"] = data_df[["id", "lag7"]].groupby("id")["lag7"].transform(lambda x : x.rolling(28).mean())
     data_df["rmean_lag28_7"] = data_df[["id", "lag28"]].groupby("id")["lag28"].transform(lambda x : x.rolling(7).mean())
     data_df["rmean_lag28_28"] = data_df[["id", "lag28"]].groupby("id")["lag28"].transform(lambda x : x.rolling(28).mean())
 
     # price features
-    data_df['sell_price_lag1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
-    data_df['sell_price_lag7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(7))
-    data_df['sell_price_lag28'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(28))
-    mean_sell_price_df = data_df.groupby('id').mean()
-    mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
-    data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
-    data_df["diff_sell_price"] = data_df["sell_price"] - data_df["mean_sell_price"]
-    data_df["div_sell_price"] = data_df["sell_price"] / data_df["mean_sell_price"]
+    # data_df['sell_price_lag1'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(1))
+    # data_df['sell_price_lag7'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(7))
+    # data_df['sell_price_lag28'] = data_df.groupby(['id'])['sell_price'].transform(lambda x: x.shift(28))
+    # mean_sell_price_df = data_df.groupby('id').mean()
+    # mean_sell_price_df.rename(columns={"sell_price": "mean_sell_price"}, inplace=True)
+    # data_df = data_df.merge(mean_sell_price_df["mean_sell_price"], on="id")
+    # data_df["diff_sell_price"] = data_df["sell_price"] - data_df["mean_sell_price"]
+    # data_df["div_sell_price"] = data_df["sell_price"] / data_df["mean_sell_price"]
 
     # time features
     data_df['year'] = data_df['date'].dt.year.astype(np.int16)
@@ -199,9 +199,9 @@ def feature_engineering(data_df):
     data_df['mday'] = data_df['date'].dt.day.astype(np.int8)
     data_df['wday'] = data_df['date'].dt.dayofweek.astype(np.int8)
 
-    black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
-    data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
-    data_df["black_friday"] = data_df["black_friday"].astype(np.int8)
+    # black_friday = ["2011-11-25", "2012-11-23", "2013-11-29", "2014-11-28", "2015-11-27"]
+    # data_df["black_friday"] = data_df["date"].isin(black_friday) * 1
+    # data_df["black_friday"] = data_df["black_friday"].astype(np.int8)
 
     return data_df
 
@@ -217,7 +217,7 @@ def train_val_split(train_df):
 
     # valid data
     valid_day = train_df["d"].unique()[-28:]
-    X_val = train_df[train_df["d"].isin(valid_day)]
+    X_val = train_df[train_df["d"].isin(valid_day)].sort_values("id").reset_index(drop=True)
     y_val = X_val['demand']
     print("valid(day): {0} ~ {1} -> {2}".format(valid_day[0], valid_day[-1], len(valid_day)))
 
@@ -227,48 +227,30 @@ def train_val_split(train_df):
     return X_train, y_train, X_val, y_val
 
 
-# def evaluate_WRMSSE(val_pred):
-#     train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_validation.csv')
-#     calendar_df = pd.read_csv("../input/m5-forecasting-accuracy/calendar.csv")
-#     sell_prices_df = pd.read_csv("../input/m5-forecasting-accuracy/sell_prices.csv")
-
-#     train_df = train_df.sort_values("id").reset_index(drop=True)
-#     train_fold_df = train_df.iloc[:, :-28]
-#     valid_fold_df = train_df.iloc[:, -28:]
-#     del train_df
-#     gc.collect()
-
-#     evaluator = WRMSSEEvaluator(train_fold_df, valid_fold_df, calendar_df, sell_prices_df)
-    
-#     val_pred = val_pred.reshape(valid_fold_df.shape[0], valid_fold_df.shape[1])
-#     columns = valid_fold_df.columns
-#     val_pred = pd.DataFrame(val_pred, columns=columns)
-
-#     return evaluator.score(val_pred)
-
-
 def train_lgb(X_train, y_train, X_val, y_val, features, evaluator, date):
     # define random hyperparammeters
     params = {'boosting_type': 'gbdt',
+              'objective': 'tweedie',
+              'tweedie_variance_power': 1.1,
               'metric': 'rmse',
-              'objective': "poisson",
-              'n_jobs': -1,
-              'seed': 5046,
-              'learning_rate': 0.075,
-              'lambda_l2': 0.1,
-              'sub_feature': 0.8,
-              'sub_row': 0.75,
-              'bagging_freq': 1,
-              'num_leaves': 128,
-              'min_data_in_leaf': 100
-              }
-
+              'subsample': 0.5,
+              'subsample_freq': 1,
+              'learning_rate': 0.03,
+              'num_leaves': 2**11-1,
+              'min_data_in_leaf': 2**12-1,
+              'feature_fraction': 0.5,
+              'seed':5046,
+              'max_bin': 100,
+              'boost_from_average': False
+              } 
     # datasetの作成
     train_set = lgb.Dataset(X_train[features], y_train)
     val_set = lgb.Dataset(X_val[features], y_val)
 
     # train/validation
     print("\n[START] training model ->")
+    print(len(X_train[features].columns))
+    print(len(X_val[features].columns))
     model = lgb.train(params, train_set, num_boost_round=1200, valid_sets=val_set, verbose_eval=100)
 
     # save model
@@ -322,28 +304,31 @@ def predict_and_submmision(model, features, date):
 
 def main():
     # 変更パラメータ
-    # pretrained_model = "../model/20200411/model_235756.pickle"
+    pretrained_model = "../model/20200411/model_235756.pickle"
+    MODE = "train"
 
     t1 = time.time()
     date = datetime.today().strftime("%Y%m%d_%H%M%S")
 
-    data_df = create_data(is_train=True, num_train_day = 1500)
-    
-    print("\n[START] feature engineering ->")
-    data_df = feature_engineering(data_df)
+    if MODE == "train":
+        data_df = create_data(is_train=True, num_train_day = 1500)
+        
+        print("\n[START] feature engineering ->")
+        data_df = feature_engineering(data_df)
+
+        # train/val split
+        X_train, y_train, X_val, y_val = train_val_split(data_df)
+
 
     # define list of features
     default_features = ['item_id', 'dept_id', 'store_id','cat_id', 'state_id', 'event_name_1', 'event_type_1',
                         'event_name_2', 'event_type_2', 'snap_CA', 'snap_TX', 'snap_WI', 'sell_price']
-    demand_features = ['lag1', 'lag7', 'lag28', 'rmean_lag1_7', 'rmean_lag1_28', 'rmean_lag7_7', 'rmean_lag7_28', 'rmean_lag28_7', 'rmean_lag28_28']
-    price_features = ['sell_price_lag1', 'sell_price_lag7', 'sell_price_lag28', "diff_sell_price", "div_sell_price"]
-    time_features = ["year", "month", "week", "quarter", "mday", "wday", "black_friday"]
-    features = default_features + demand_features + time_features + price_features 
+    demand_features = ['lag7', 'lag28', 'rmean_lag7_7', 'rmean_lag7_28', 'rmean_lag28_7', 'rmean_lag28_28']
+    # price_features = ['sell_price_lag1', 'sell_price_lag7', 'sell_price_lag28', "diff_sell_price", "div_sell_price"]
+    time_features = ["year", "month", "week", "quarter", "mday", "wday"]
+    features = default_features + demand_features + time_features  # + price_features 
     print("N_features: {}\n".format(len(features)))
 
-    # train/val split
-    X_train, y_train, X_val, y_val = train_val_split(data_df)
-    
     # evaluator
     train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_validation.csv')
     calendar_df = pd.read_csv("../input/m5-forecasting-accuracy/calendar.csv")
@@ -353,13 +338,14 @@ def main():
     valid_fold_df = train_df.iloc[:, -28:]
     del train_df
     gc.collect()
-
     evaluator = WRMSSEEvaluator(train_fold_df, valid_fold_df, calendar_df, sell_prices_df)
 
     # train
-    model = train_lgb(X_train, y_train, X_val, y_val, features, evaluator, date)
-    # with open(pretrained_model, mode='rb') as fp:
-    #     model = pickle.load(fp)
+    if MODE == "train":
+        model = train_lgb(X_train, y_train, X_val, y_val, features, evaluator, date)
+    else:
+        with open(pretrained_model, mode='rb') as fp:
+            model = pickle.load(fp)
 
     # predict & submission
     predict_and_submmision(model, features, date)

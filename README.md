@@ -12,12 +12,12 @@
 
 ### sales_train_validation.csv  
 1913日間(訓練データ)の売り上げ情報  
-train: d_1 ~ d_1913
+train: d_1(2011/01/29)  ~ d_1913(2016/04/24)
 
 ### sample_submission.csv
-ある匿名のアイテム827個が未来の28日間で何個売れるかを予測する  
-valid: d_1914 ~ d_1941
-eval: d_1942 ~ d_1969
+ある匿名のアイテム30490個が未来の28日間で何個売れるかを予測する  
+stage1: d_1914(2016/04/25) ~ d_1941(2016/05/22)  コンペ終了1ヶ月前(6/1)に正解データが与えられる
+stage2: d_1942(2016/05/23) ~ d_1969(2016/06/19)　与えられたデータを基にこの範囲の需要を予測
 
 ### sell_prices.csv  
 
@@ -25,15 +25,27 @@ eval: d_1942 ~ d_1969
 店舗数 10(CA:4, Tx:3, WI:3)
 
 ### Discussion & knowleadge
- 
+似た過去のコンペ
 [M5 forecast 2 python](https://www.kaggle.com/kneroma/m5-forecast-v2-python)  
 検証はダミーで行う  
 テストのlag特徴量を1日ずつ作成してpredict  
 
+[Few thoughts about M5 competition](https://www.kaggle.com/c/m5-forecasting-accuracy/discussion/138881)
+grid作成  
+lagによるnanを削除するか否か　　
+loss関数がfrexibleなのでNNも検討  
+アンサンブルとスタッキング  
+
+[Back to (predict) the future - Interactive M5 EDA](https://www.kaggle.com/headsortails/back-to-predict-the-future-interactive-m5-eda)
+最大投票のEDA
 
 ### MEMO
 4/8  
-特徴量を追加することで結果が悪くなることが多い  
+データ数や特徴量を追加することで結果が悪くなることが多い 　
 ノイズとなっている特徴量がある or leakの可能性  
 いずれにしても現在のコードに交差検証の方法を確立しないと方針が立てにくい  
 
+4/9
+rmean_lag7_28が圧倒的にgain重要度高い理由について考える  
+商品のreleace dayについて 
+ある商品だけ周期性がある可能性は十分にあるのでEDAをして見つけたらそれのみを予測するモデルを作る
