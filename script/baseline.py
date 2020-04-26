@@ -1,9 +1,11 @@
 import gc
 import os
 import time
+import json
 import pickle
+import requests
 import warnings
-import datetime
+import traceback
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -16,6 +18,19 @@ from tqdm import tqdm
 from scipy.sparse import csr_matrix
 
 warnings.filterwarnings('ignore')
+
+
+def send_slack_notification(message):
+    webhook_url = 'https://hooks.slack.com/services/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'  # 終わったら無効化する
+    data = json.dumps({'text': message})
+    headers = {'content-type': 'application/json'}
+    requests.post(webhook_url, data=data, headers=headers)
+
+def send_slack_error_notification(message):
+    webhook_url = 'https://hooks.slack.com/services/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'  # 終わったら無効化する
+    data = json.dumps({"text":":no_entry_sign:" + message})
+    headers = {'content-type': 'application/json'}
+    requests.post(webhook_url, data=data, headers=headers)
 
 
 class WRMSSEEvaluator(object):
@@ -267,6 +282,9 @@ def train_lgb(X_train, y_train, X_val, y_val, features, evaluator, date):
     val_WRMSSE_score = evaluator.score(val_pred)
     print(f'val WRMSSE score: {val_WRMSSE_score}')
 
+    send_slack_notification("RMSE:{}".format(val_RMSE_score))
+    send_slack_notification("WRMSSE:{}".format(val_WRMSSE_score))
+
     return model
 
 
@@ -305,12 +323,13 @@ def predict_and_submmision(model, features, date):
 def main():
     # 変更パラメータ
     pretrained_model = "../model/20200411/model_235756.pickle"
-    MODE = "train"
+    TRAIN_MODE = True
 
     t1 = time.time()
     date = datetime.today().strftime("%Y%m%d_%H%M%S")
+    send_slack_notification("START {}".format(datetime.today().strftime("%Y/%m/%d %H:%M")))
 
-    if MODE == "train":
+    if TRAIN_MODE == True:
         data_df = create_data(is_train=True, num_train_day = 1500)
         
         print("\n[START] feature engineering ->")
@@ -341,7 +360,7 @@ def main():
     evaluator = WRMSSEEvaluator(train_fold_df, valid_fold_df, calendar_df, sell_prices_df)
 
     # train
-    if MODE == "train":
+    if TRAIN_MODE == True:
         model = train_lgb(X_train, y_train, X_val, y_val, features, evaluator, date)
     else:
         with open(pretrained_model, mode='rb') as fp:
@@ -352,8 +371,15 @@ def main():
 
     t2 = time.time()
     print("\nspend time: {}[min]".format(str((t2 - t1) / 60)))
+    send_slack_notification("FINISH")
+    send_slack_notification("spend time: {}[min]".format(str((t2 - t1) / 60)))
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except:
+        send_slack_error_notification("[ERROR]\n" + traceback.format_exc())
+        print(traceback.format_exc())
+
 
