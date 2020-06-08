@@ -78,8 +78,7 @@ def read_data(index_columns, END_TRAIN, TARGET):
     grid_df = pd.melt(train_df, id_vars = index_columns, var_name = 'd', value_name = TARGET)
     print('Train rows:', len(train_df), len(grid_df))
 
-    # To be able to make predictions
-    # we need to add "test set" to our grid
+    # add stage1 data(d1914 ~ d1941)
     add_grid = pd.DataFrame()
     for i in range(1,29):
         temp_df = train_df[index_columns]
@@ -109,6 +108,7 @@ def read_data(index_columns, END_TRAIN, TARGET):
     return grid_df, prices_df, calendar_df
 
 
+# create data which include releace info(what's day product was releaced)
 def make_base_grid(grid_df, prices_df, calendar_df):
     """
     find the release week and remove the unreleased period.
@@ -117,34 +117,23 @@ def make_base_grid(grid_df, prices_df, calendar_df):
     """
     print('\nRelease week')
 
-    # Identify
+    # wm_yr_wk形式でreleace weekを特定
     release_df = prices_df.groupby(['store_id','item_id'])['wm_yr_wk'].agg(['min']).reset_index()
     release_df.columns = ['store_id','item_id','release']
     grid_df = merge_by_concat(grid_df, release_df, ['store_id','item_id'])
     del release_df
 
-    # We want to remove some "zeros" rows from grid_df 
-    # to do it we need wm_yr_wk column
-    # let's merge partly calendar_df to have it
+    # wm_yr_wkをcalendarから持ってくる
     grid_df = merge_by_concat(grid_df, calendar_df[['wm_yr_wk','d']], ['d'])
                         
-    # Now we can cutoff some rows 
-    # and safe memory 
+    # リリースしていない列は削除
     grid_df = grid_df[grid_df['wm_yr_wk']>=grid_df['release']]
     grid_df = grid_df.reset_index(drop=True)
 
     # Let's check our memory usage
     print("{:>20}: {:>8}".format('Original grid_df',sizeof_fmt(grid_df.memory_usage(index=True).sum())))
 
-    
-    # Should we keep release week as one of the features?
-    # Only good CV can give the answer.
-    # Let's minify the release values.
-    # Min transformation will not help here 
-    # as int16 -> Integer (-32768 to 32767)
-    # and our grid_df['release'].max() serves for int16
-    # but we have have an idea how to transform 
-    # other columns in case we will need it
+    # releaceが一番若い日(ほぼd1)を基準としてreleace日を算出 
     grid_df['release'] = grid_df['release'] - grid_df['release'].min()
     grid_df['release'] = grid_df['release'].astype(np.int16)
 

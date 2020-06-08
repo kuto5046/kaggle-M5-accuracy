@@ -21,8 +21,22 @@ stage2: d_1942(2016/05/23) ~ d_1969(2016/06/19)　与えられたデータを基
 
 ### sell_prices.csv  
 
+### grid
+grid1 商品のreleace情報を含めたdata
+releaseしていない日は削除されている  
+
+grid2 sell_price情報から統計量を抽出したもの
+      ただしまだfeature enginneringは行なっていない  
+grid3 calendar情報
+
+lags
+lag
+rolling mean
+rolling std
+rolling mean tmp
+
 ### info
-店舗数 10(CA:4, Tx:3, WI:3)
+店舗数 10(CA(カリフォルニア):4, Tx(テキサス):3, WI(ウィスコンシン):3)
 
 ### Discussion & knowleadge
 似た過去のコンペ
@@ -49,3 +63,17 @@ loss関数がfrexibleなのでNNも検討
 rmean_lag7_28が圧倒的にgain重要度高い理由について考える  
 商品のreleace dayについて 
 ある商品だけ周期性がある可能性は十分にあるのでEDAをして見つけたらそれのみを予測するモデルを作る
+
+4/26
+grid化の意味
+out of stock(releace day)の情報をいれる
+
+
+6/8
+issuesの棚卸し  
+1914~1941の予測と実際を比較してズレている部分をみる  
+tsfreshによる新しい特徴量の追加
+NNの利用  
+線形モデル  
+スタッキング  
+psude labeling    
