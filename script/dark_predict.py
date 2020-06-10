@@ -240,14 +240,14 @@ try:
     # var
     VER = 1                          # Our model version
     TARGET = "sales"
+    KEY_COLUMN = "dept_id"
     SEED = 5046                      # We want all things
     seed_everything(SEED)            # to be as deterministic 
-    TRAINED_DIR = "20200425/"
-    #LIMITS and const
     END_TRAIN   = 1913               # End day of our train set
 
     #PATHS for Features
     ORIGINAL = '../input/m5-forecasting-accuracy/'
+    TRAINED_DIR = "0609_1400/"
     MODEL = "../model/" + TRAINED_DIR
     OUTPUT = '../output/' + TRAINED_DIR
 
@@ -272,8 +272,9 @@ try:
     # Join back the Test dataset with 
     # a small part of the training data 
     # to make recursive features
-    STORES_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_validation.csv')['store_id'].unique())
-    base_test = get_base_test(STORES_IDS, OUTPUT)
+    KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_validation.csv')[KEY_COLUMN].unique())
+
+    base_test = get_base_test(KEY_IDS, OUTPUT)
 
     # Timer to measure predictions time 
     main_time = time.time()
@@ -289,11 +290,11 @@ try:
         grid_df = base_test.copy()
         grid_df = pd.concat([grid_df, df_parallelize_run(make_lag_roll, ROLS_SPLIT)], axis=1)  # TODO 挙動理解
         
-        for store_id in STORES_IDS:
+        for key_id in KEY_IDS:
             
             # Read all our models and make predictions
             # for each day/store pairs
-            model_name = 'lgb_model_'+store_id+'_v'+str(VER)+'.bin' 
+            model_name = 'lgb_model_'+key_id+'_v'+str(VER)+'.bin' 
 
             # if USE_AUX:
             #     model_name = AUX_MODELS + model_name
@@ -301,7 +302,7 @@ try:
             model = pickle.load(open(MODEL + model_name, 'rb'))
             
             day_mask = base_test['d']==(END_TRAIN + PREDICT_DAY)
-            store_mask = base_test['store_id'] == store_id
+            store_mask = base_test[KEY_IDS] == key_id
             
             mask = (day_mask)&(store_mask)
             base_test[TARGET][mask] = model.predict(grid_df[mask][features])
@@ -315,8 +316,8 @@ try:
             all_preds = temp_df.copy()
             
         print('#'*10, ' %0.2f min round |' % ((time.time() - start_time) / 60),
-                        ' %0.2f min total |' % ((time.time() - main_time) / 60),
-                        ' %0.2f day sales |' % (temp_df['F'+str(PREDICT_DAY)].sum()))
+                      ' %0.2f min total |' % ((time.time() - main_time) / 60),
+                      ' %0.2f day sales |' % (temp_df['F'+str(PREDICT_DAY)].sum()))
         del temp_df
         
     all_preds = all_preds.reset_index(drop=True)

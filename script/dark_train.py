@@ -22,13 +22,6 @@ from sklearn import metrics, preprocessing
 from tqdm import tqdm
 
 
-from typing import Union
-
-import numpy as np
-import pandas as pd
-from tqdm.notebook import tqdm_notebook as tqdm
-
-
 class WRMSSEEvaluator(object):
 
     def __init__(self, train_df: pd.DataFrame, valid_df: pd.DataFrame, calendar: pd.DataFrame, prices: pd.DataFrame):
@@ -140,7 +133,7 @@ def seed_everything(seed=0):
 
 
 # Read data every stores
-def get_data_by_store(store, TARGET, START_TRAIN):
+def get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id):
 
     #PATHS for Features
     BASE     = '../input/m5-simple-fe/grid_part_1.pkl'
@@ -164,7 +157,7 @@ def get_data_by_store(store, TARGET, START_TRAIN):
                     axis=1)
 
     # Leave only relevant store
-    df = df[df['store_id']==store]
+    df = df[df[KEY_COLUMN]==key_id]
 
     # With memory limits we have to read 
     # lags and mean encoding features
@@ -197,14 +190,14 @@ def get_data_by_store(store, TARGET, START_TRAIN):
 
 
 # Recombine Test set after training
-def get_base_test(STORES_IDS, OUTPUT):
-    base_test = pd.DataFrame()
+# def get_base_test(KEY_COLUMN, KEY_IDS, OUTPUT):
+#     base_test = pd.DataFrame()
 
-    for store_id in STORES_IDS:
-        temp_df = pd.read_pickle(OUTPUT + 'test_'+store_id+'.pkl')
-        temp_df['store_id'] = store_id
-        base_test = pd.concat([base_test, temp_df]).reset_index(drop=True)
-    return base_test
+#     for key_id in KEY_IDS:
+#         temp_df = pd.read_pickle(OUTPUT + 'test_'+key_id+'.pkl')
+#         temp_df[KEY_COLUMN] = key_id
+#         base_test = pd.concat([base_test, temp_df]).reset_index(drop=True)
+#     return base_test
 
 
 def main():
@@ -213,12 +206,15 @@ def main():
     # var
     VER = 1                          # Our model version
     TARGET = "sales"
+    KEY_COLUMN = 'dept_id'          # training each id
+    NUM_CPU = 8
     SEED = 5046                      # We want all things
     seed_everything(SEED)            # to be as deterministic 
+
     NOW_DATE = datetime.today().strftime("%Y%m%d_%H%M%S")
-    ORIGINAL = '../input/m5-forecasting-accuracy/'
-    OUTPUT = '../output/{}/'.format(NOW_DATE[5:10])
-    MODEL = "../model/{}/".format(NOW_DATE[5:10])  
+    ORIGINAL = '../input/m5-forecasting-accuracy/' 
+    OUTPUT = '../output/{}/'.format(NOW_DATE[4:13])
+    MODEL = "../model/{}/".format(NOW_DATE[4:13])  
     os.makedirs(OUTPUT, exist_ok=True)
     os.makedirs(MODEL, exist_ok=True)
 
@@ -227,8 +223,9 @@ def main():
     END_TRAIN   = 1913               # End day of our train set
     P_HORIZON   = 28                 # Prediction horizon
 
-    #STORES ids
-    STORES_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_validation.csv')['store_id'].unique())
+    #key ids list
+    KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_validation.csv')[KEY_COLUMN].unique())
+    print("key id: {}\n".format(KEY_IDS))
     
     # Train Models
     params = {'boosting_type': 'gbdt',
@@ -245,14 +242,15 @@ def main():
               'max_bin': 100,
               'n_estimators': 1400,
               'boost_from_average': False,
-              'verbose': -1} 
+              'verbose': -1,
+              'num_threads':NUM_CPU} 
 
     # training every stores
-    for store_id in STORES_IDS:
-        print('Train', store_id)
+    for key_id in KEY_IDS:
+        print('Train', key_id)
         
         # Get grid for current store
-        grid_df, features = get_data_by_store(store_id, TARGET, START_TRAIN) 
+        grid_df, features = get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id)
         
         # mask
         train_mask = grid_df['d']<=END_TRAIN                            # 0~1913  TODO 訓練に予測対象が入っているのはいいの？
@@ -272,7 +270,7 @@ def main():
         grid_df = grid_df[preds_mask].reset_index(drop=True)
         keep_cols = [col for col in list(grid_df) if '_tmp_' not in col]
         grid_df = grid_df[keep_cols]
-        grid_df.to_pickle(OUTPUT + 'test_'+store_id+'.pkl')
+        grid_df.to_pickle(OUTPUT + 'test_'+key_id+'.pkl')
         del grid_df
 
         # Launch seeder again to make lgb training 100% deterministic
@@ -281,7 +279,7 @@ def main():
         # train
         model = lgb.train(params, train_data, valid_sets = [valid_data], verbose_eval = 100)
         y_pred = model.predict(grid_df[valid_mask][features])
-
+        
         # train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_validation.csv')
         # train_fold_df = train_df.iloc[:, :-28]
         # valid_fold_df = train_df.iloc[:, -28:]
@@ -291,7 +289,7 @@ def main():
         # evaluator.score(valid_preds)
 
         # save the estimator as .bin
-        model_name = 'lgb_model_'+store_id+'_v'+str(VER)+'.bin'  # 保存場所
+        model_name = 'lgb_model_'+key_id+'_v'+str(VER)+'.bin'  # 保存場所
         pickle.dump(model, open(MODEL + model_name, 'wb'))
 
         # Remove temporary files and objects 
