@@ -20,116 +20,7 @@ import requests
 import seaborn as sns
 from sklearn import metrics, preprocessing
 from tqdm import tqdm
-
-
-class WRMSSEEvaluator(object):
-
-    def __init__(self, train_df: pd.DataFrame, valid_df: pd.DataFrame, calendar: pd.DataFrame, prices: pd.DataFrame):
-        train_y = train_df.loc[:, train_df.columns.str.startswith('d_')]
-        train_target_columns = train_y.columns.tolist()
-        weight_columns = train_y.iloc[:, -28:].columns.tolist()
-
-        train_df['all_id'] = 0  # for lv1 aggregation
-
-        id_columns = train_df.loc[:, ~train_df.columns.str.startswith('d_')].columns.tolist()
-        valid_target_columns = valid_df.loc[:, valid_df.columns.str.startswith('d_')].columns.tolist()
-
-        if not all([c in valid_df.columns for c in id_columns]):
-            valid_df = pd.concat([train_df[id_columns], valid_df], axis=1, sort=False)
-
-        self.train_df = train_df
-        self.valid_df = valid_df
-        self.calendar = calendar
-        self.prices = prices
-
-        self.weight_columns = weight_columns
-        self.id_columns = id_columns
-        self.valid_target_columns = valid_target_columns
-
-        weight_df = self.get_weight_df()
-
-        self.group_ids = (
-            'all_id',
-            'state_id',
-            'store_id',
-            'cat_id',
-            'dept_id',
-            ['state_id', 'cat_id'],
-            ['state_id', 'dept_id'],
-            ['store_id', 'cat_id'],
-            ['store_id', 'dept_id'],
-            'item_id',
-            ['item_id', 'state_id'],
-            ['item_id', 'store_id']
-        )
-
-        for i, group_id in enumerate(tqdm(self.group_ids)):
-            train_y = train_df.groupby(group_id)[train_target_columns].sum()
-            scale = []
-            for _, row in train_y.iterrows():
-                series = row.values[np.argmax(row.values != 0):]
-                scale.append(((series[1:] - series[:-1]) ** 2).mean())
-            setattr(self, f'lv{i + 1}_scale', np.array(scale))
-            setattr(self, f'lv{i + 1}_train_df', train_y)
-            setattr(self, f'lv{i + 1}_valid_df', valid_df.groupby(group_id)[valid_target_columns].sum())
-
-            lv_weight = weight_df.groupby(group_id)[weight_columns].sum().sum(axis=1)
-            setattr(self, f'lv{i + 1}_weight', lv_weight / lv_weight.sum())
-
-    def get_weight_df(self) -> pd.DataFrame:
-        day_to_week = self.calendar.set_index('d')['wm_yr_wk'].to_dict()
-        weight_df = self.train_df[['item_id', 'store_id'] + self.weight_columns].set_index(['item_id', 'store_id'])
-        weight_df = weight_df.stack().reset_index().rename(columns={'level_2': 'd', 0: 'value'})
-        weight_df['wm_yr_wk'] = weight_df['d'].map(day_to_week)
-
-        weight_df = weight_df.merge(self.prices, how='left', on=['item_id', 'store_id', 'wm_yr_wk'])
-        weight_df['value'] = weight_df['value'] * weight_df['sell_price']
-        weight_df = weight_df.set_index(['item_id', 'store_id', 'd']).unstack(level=2)['value']
-        weight_df = weight_df.loc[zip(self.train_df.item_id, self.train_df.store_id), :].reset_index(drop=True)
-        weight_df = pd.concat([self.train_df[self.id_columns], weight_df], axis=1, sort=False)
-        return weight_df
-
-    def rmsse(self, valid_preds: pd.DataFrame, lv: int) -> pd.Series:
-        valid_y = getattr(self, f'lv{lv}_valid_df')
-        score = ((valid_y - valid_preds) ** 2).mean(axis=1)
-        scale = getattr(self, f'lv{lv}_scale')
-        return (score / scale).map(np.sqrt)
-
-    def score(self, valid_preds: Union[pd.DataFrame, np.ndarray]) -> float:
-        assert self.valid_df[self.valid_target_columns].shape == valid_preds.shape
-
-        if isinstance(valid_preds, np.ndarray):
-            valid_preds = pd.DataFrame(valid_preds, columns=self.valid_target_columns)
-
-        valid_preds = pd.concat([self.valid_df[self.id_columns], valid_preds], axis=1, sort=False)
-
-        all_scores = []
-        for i, group_id in enumerate(self.group_ids):
-            lv_scores = self.rmsse(valid_preds.groupby(group_id)[self.valid_target_columns].sum(), i + 1)
-            weight = getattr(self, f'lv{i + 1}_weight')
-            lv_scores = pd.concat([weight, lv_scores], axis=1, sort=False).prod(axis=1)
-            all_scores.append(lv_scores.sum())
-
-        return np.mean(all_scores)
-
-
-def send_slack_notification(message):
-    webhook_url = 'https://hooks.slack.com/services/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'  # 終わったら無効化する
-    data = json.dumps({'text': message})
-    headers = {'content-type': 'application/json'}
-    requests.post(webhook_url, data=data, headers=headers)
-
-
-def send_slack_error_notification(message):
-    webhook_url = 'https://hooks.slack.com/services/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'  # 終わったら無効化する
-    data = json.dumps({"text":":no_entry_sign:" + message})
-    headers = {'content-type': 'application/json'}
-    requests.post(webhook_url, data=data, headers=headers)
-
-
-def seed_everything(seed=0):
-    random.seed(seed)
-    np.random.seed(seed)
+from utils import seed_everything, send_slack_notification, send_slack_error_notification
 
 
 # Read data every stores
@@ -145,7 +36,7 @@ def get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id):
 
     # FEATURES to remove
     # These features lead to overfit or values not present in test set
-    remove_features = ['id','state_id','store_id', 'date','wm_yr_wk','d', TARGET]
+    remove_features = ['id','state_id', KEY_COLUMN, 'date','wm_yr_wk','d', TARGET]
     mean_features  = ['enc_cat_id_mean','enc_cat_id_std',
                     'enc_dept_id_mean','enc_dept_id_std',
                     'enc_item_id_mean','enc_item_id_std'] 
@@ -177,7 +68,7 @@ def get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id):
     df = pd.concat([df, df3], axis=1)
     del df3 # to not reach memory limit 
     
-    df["d"] = df["d"].str.strip("d_").astype(int)
+    # df["d"] = df["d"].str.strip("d_").astype(int)
 
     # Create featur es list
     features = [col for col in list(df) if col not in remove_features]
@@ -207,7 +98,7 @@ def main():
     VER = 1                          # Our model version
     TARGET = "sales"
     KEY_COLUMN = 'dept_id'          # training each id
-    NUM_CPU = 8
+    NUM_CPU = psutil.cpu_count() 
     SEED = 5046                      # We want all things
     seed_everything(SEED)            # to be as deterministic 
 
@@ -224,7 +115,7 @@ def main():
     P_HORIZON   = 28                 # Prediction horizon
 
     #key ids list
-    KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_validation.csv')[KEY_COLUMN].unique())
+    KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_evaluation.csv')[KEY_COLUMN].unique())
     print("key id: {}\n".format(KEY_IDS))
     
     # Train Models
@@ -240,7 +131,7 @@ def main():
               'min_data_in_leaf': 2**12-1,
               'feature_fraction': 0.5,
               'max_bin': 100,
-              'n_estimators': 1400,
+              'num_iterations': 1400,
               'boost_from_average': False,
               'verbose': -1,
               'num_threads':NUM_CPU} 
@@ -248,14 +139,15 @@ def main():
     # training every stores
     for key_id in KEY_IDS:
         print('Train', key_id)
+        send_slack_notification("Train:{}".format(key_id))
         
         # Get grid for current store
         grid_df, features = get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id)
         
         # mask
-        train_mask = grid_df['d']<=END_TRAIN                            # 0~1913  TODO 訓練に予測対象が入っているのはいいの？
-        valid_mask = train_mask&(grid_df['d']>(END_TRAIN-P_HORIZON))    # 1886~1913  予測対象
-        preds_mask = grid_df['d']>(END_TRAIN-100)                       # 1813~1941  再帰的予測のため100日分のbafferを取っている
+        train_mask = grid_df['d']<=END_TRAIN                                           # 0~1913  TODO 訓練に予測対象が入っているのはいいの？
+        valid_mask = (END_TRAIN<grid_df['d']) & (grid_df['d']<=(END_TRAIN+P_HORIZON))  # 1914~1941  予測対象
+        preds_mask = grid_df['d']>(END_TRAIN-100)                                      # 1813~1941  再帰的予測のため100日分のbafferを取っている
         
         # Apply masks
         train_data = lgb.Dataset(grid_df[train_mask][features], label=grid_df[train_mask][TARGET])
@@ -273,20 +165,8 @@ def main():
         grid_df.to_pickle(OUTPUT + 'test_'+key_id+'.pkl')
         del grid_df
 
-        # Launch seeder again to make lgb training 100% deterministic
-        # seed_everything(SEED)
-
         # train
         model = lgb.train(params, train_data, valid_sets = [valid_data], verbose_eval = 100)
-        y_pred = model.predict(grid_df[valid_mask][features])
-        
-        # train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_validation.csv')
-        # train_fold_df = train_df.iloc[:, :-28]
-        # valid_fold_df = train_df.iloc[:, -28:]
-        # valid_preds = valid_fold_df.copy() + np.random.randint(100, size=valid_fold_df.shape)
-
-        # evaluator = WRMSSEEvaluator(train_fold_df, valid_fold_df, calendar, prices)
-        # evaluator.score(valid_preds)
 
         # save the estimator as .bin
         model_name = 'lgb_model_'+key_id+'_v'+str(VER)+'.bin'  # 保存場所
