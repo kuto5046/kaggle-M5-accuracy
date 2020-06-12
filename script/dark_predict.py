@@ -47,7 +47,7 @@ def get_features(TARGET):
 
     # FEATURES to remove
     # These features lead to overfit or values not present in test set
-    remove_features = ['id','state_id','store_id', 'date','wm_yr_wk','d', TARGET]
+    remove_features = ['id','state_id', KEY_COLUMN, 'date','wm_yr_wk', 'd', TARGET]
     mean_features  = ['enc_cat_id_mean','enc_cat_id_std',
                     'enc_dept_id_mean','enc_dept_id_std',
                     'enc_item_id_mean','enc_item_id_std'] 
@@ -92,7 +92,7 @@ def get_base_test(KEY_COLUMN, KEY_IDS, OUTPUT):
 
     for key_id in KEY_IDS:
         temp_df = pd.read_pickle(OUTPUT + 'test_'+key_id+'.pkl')
-        temp_df[KEY_COLUMN] = key_id.astype("category")
+        temp_df[KEY_COLUMN] = key_id  # .astype("category")
         base_test = pd.concat([base_test, temp_df]).reset_index(drop=True)
     return base_test
 
@@ -107,7 +107,7 @@ def make_lag_roll(LAG_DAY):
     return lag_df[[col_name]]
 
 
-def submission(all_preds, ORIGINAL, VER):
+def submission(all_preds, ORIGINAL, OUTPUT, VER, WRMSSEscore):
     """
     Reading competition sample submission and
     merging our predictions
@@ -116,7 +116,7 @@ def submission(all_preds, ORIGINAL, VER):
     """
     submission = pd.read_csv(ORIGINAL+'sample_submission.csv')[['id']]
     submission = submission.merge(all_preds, on=['id'], how='left').fillna(0)
-    submission.to_csv('submission_v'+str(VER)+'.csv', index=False)
+    submission.to_csv(OUTPUT + 'submission_v'+str(VER) + "_" + str(round(WRMSSEscore, 3)) + '.csv', index=False)
 
 
 try:
@@ -125,14 +125,15 @@ try:
     # var
     VER = 1                          # Our model version
     TARGET = "sales"
-    KEY_COLUMN = "dept_id"
+    KEY_COLUMN = "store_id"
     SEED = 5046                      # We want all things
     seed_everything(SEED)            # to be as deterministic 
-    END_TRAIN   = 1913               # End day of our train set
+    END_TRAIN   = 1913               # TODO End day of our train set 最後は1941に変更
+    P_HORIZON   = 28                 # Prediction horizon
 
     #PATHS for Features
     ORIGINAL = '../input/m5-forecasting-accuracy/'
-    TRAINED_DIR = "0611_0643/"
+    TRAINED_DIR = "0612_0040/"
     MODEL = "../model/" + TRAINED_DIR
     OUTPUT = '../output/' + TRAINED_DIR
 
@@ -173,7 +174,7 @@ try:
 
         # Make temporary grid to calculate rolling lags
         grid_df = base_test.copy()
-        grid_df = pd.concat([grid_df, df_parallelize_run(make_lag_roll, ROLS_SPLIT)], axis=1)  # TODO 挙動理解
+        grid_df = pd.concat([grid_df, df_parallelize_run(make_lag_roll, ROLS_SPLIT)], axis=1)
         
         for key_id in KEY_IDS:
             
@@ -202,12 +203,15 @@ try:
         del grid_df, temp_df
         
     all_preds = all_preds.reset_index(drop=True)
-
     evaluator = WRMSSEEvaluator()
-    WRMSSEscore = evaluator.score(all_preds)
+    WRMSSEscore = evaluator.score(all_preds.iloc[:, 1:].values)
     print("WRMSSE: ", WRMSSEscore)
+    all_preds["id"] = all_preds["id"].str.replace("evaluation", "validation") # TODO 後で削除
+    submission(all_preds, ORIGINAL, OUTPUT, VER, WRMSSEscore)
 
-    submission(all_preds, ORIGINAL, VER)
+
+
+    
 
     t2 = time.time()
     send_slack_notification("FINISH")

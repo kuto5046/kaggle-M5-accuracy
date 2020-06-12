@@ -80,24 +80,13 @@ def get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id):
     return df, features
 
 
-# Recombine Test set after training
-# def get_base_test(KEY_COLUMN, KEY_IDS, OUTPUT):
-#     base_test = pd.DataFrame()
-
-#     for key_id in KEY_IDS:
-#         temp_df = pd.read_pickle(OUTPUT + 'test_'+key_id+'.pkl')
-#         temp_df[KEY_COLUMN] = key_id
-#         base_test = pd.concat([base_test, temp_df]).reset_index(drop=True)
-#     return base_test
-
-
 def main():
     t1 = time.time()
 
     # var
     VER = 1                          # Our model version
     TARGET = "sales"
-    KEY_COLUMN = 'dept_id'          # training each id
+    KEY_COLUMN = 'store_id'          # training each id
     NUM_CPU = psutil.cpu_count() 
     SEED = 5046                      # We want all things
     seed_everything(SEED)            # to be as deterministic 
@@ -131,7 +120,6 @@ def main():
               'min_data_in_leaf': 2**12-1,
               'feature_fraction': 0.5,
               'max_bin': 100,
-              'num_iterations': 1400,
               'boost_from_average': False,
               'verbose': -1,
               'num_threads':NUM_CPU} 
@@ -145,9 +133,9 @@ def main():
         grid_df, features = get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id)
         
         # mask
-        train_mask = grid_df['d']<=END_TRAIN                                           # 0~1913  TODO 訓練に予測対象が入っているのはいいの？
-        valid_mask = (END_TRAIN<grid_df['d']) & (grid_df['d']<=(END_TRAIN+P_HORIZON))  # 1914~1941  予測対象
-        preds_mask = grid_df['d']>(END_TRAIN-100)                                      # 1813~1941  再帰的予測のため100日分のbafferを取っている
+        train_mask = grid_df['d']<=END_TRAIN                                         # 0~1913 最終的には0~1941
+        valid_mask = (END_TRAIN<grid_df['d']) & (grid_df['d']<=END_TRAIN+P_HORIZON)  # 1914~1941  予測対象 最終的には1942-1969
+        preds_mask = grid_df['d']>(END_TRAIN-100)                                    # 1814~1969  再帰的予測のため100日分のbafferを取っている
         
         # Apply masks
         train_data = lgb.Dataset(grid_df[train_mask][features], label=grid_df[train_mask][TARGET])
@@ -166,7 +154,7 @@ def main():
         del grid_df
 
         # train
-        model = lgb.train(params, train_data, valid_sets = [valid_data], verbose_eval = 100)
+        model = lgb.train(params, train_data, valid_sets = [valid_data], num_boost_round=10, verbose_eval = 100)
 
         # save the estimator as .bin
         model_name = 'lgb_model_'+key_id+'_v'+str(VER)+'.bin'  # 保存場所

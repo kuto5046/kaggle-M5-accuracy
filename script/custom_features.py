@@ -7,7 +7,7 @@ def main():
     TARGET = "sales"
 
     grid_df = pd.read_pickle('../input/m5-simple-fe/grid_part_1.pkl')
-    grid_df[TARGET][grid_df['d']>(1913-28)] = np.nan
+    # grid_df[TARGET][grid_df['d']>(1913-28)] = np.nan
     base_cols = list(grid_df)
 
     icols =  [['state_id'],

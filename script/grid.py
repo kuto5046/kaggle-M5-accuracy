@@ -72,7 +72,7 @@ def read_data(index_columns, END_TRAIN, TARGET):
     print("\nRead data ->")
     # Here are reafing all our data 
     # without any limitations and dtype modification
-    train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_validation.csv')
+    train_df = pd.read_csv('../input/m5-forecasting-accuracy/sales_train_evaluation.csv')
     prices_df = pd.read_csv('../input/m5-forecasting-accuracy/sell_prices.csv')
     calendar_df = pd.read_csv('../input/m5-forecasting-accuracy/calendar.csv')
     grid_df = pd.melt(train_df, id_vars = index_columns, var_name = 'd', value_name = TARGET)
@@ -277,7 +277,7 @@ def summary(grid_path):
 def main():
     # var
     TARGET = 'sales'
-    END_TRAIN = 1913         # Last day in train set
+    END_TRAIN = 1941         # Last day in train set
     index_columns = ['id','item_id','dept_id','cat_id','store_id','state_id']
 
     grid_path = "../input/m5-simple-fe/"
