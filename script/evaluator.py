@@ -18,8 +18,8 @@ class WRMSSEEvaluator(object):
               valid_target_columns:       d1914-d1941 columns
         """
         data_df = pd.read_csv("../input/m5-forecasting-accuracy/sales_train_evaluation.csv")
-        train_df = data_df.iloc[:, :-28]
-        valid_df = data_df.iloc[:, -28:]
+        train_df = data_df.iloc[:, :-56]  # TODO -28に変える
+        valid_df = data_df.iloc[:, -56:-28]  # [-28:]
         calendar = pd.read_csv('../input/m5-forecasting-accuracy/calendar.csv')
         prices = pd.read_csv('../input/m5-forecasting-accuracy/sell_prices.csv')
 

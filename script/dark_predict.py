@@ -128,7 +128,7 @@ try:
     KEY_COLUMN = "store_id"
     SEED = 5046                      # We want all things
     seed_everything(SEED)            # to be as deterministic 
-    END_TRAIN   = 1913               # TODO End day of our train set 最後は1941に変更
+    END_TRAIN   = 1913               # TODO  最後は1941に変更 End day of our train set
     P_HORIZON   = 28                 # Prediction horizon
 
     #PATHS for Features
@@ -208,10 +208,6 @@ try:
     print("WRMSSE: ", WRMSSEscore)
     all_preds["id"] = all_preds["id"].str.replace("evaluation", "validation") # TODO 後で削除
     submission(all_preds, ORIGINAL, OUTPUT, VER, WRMSSEscore)
-
-
-
-    
 
     t2 = time.time()
     send_slack_notification("FINISH")
