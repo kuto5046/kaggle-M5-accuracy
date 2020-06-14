@@ -22,7 +22,6 @@ from sklearn import metrics, preprocessing
 from tqdm import tqdm
 from utils import seed_everything, send_slack_notification, send_slack_error_notification
 
-
 # Read data every stores
 def get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id):
 
@@ -84,7 +83,7 @@ def main():
     t1 = time.time()
 
     # var
-    VER = 1                          # Our model version
+    VER = 2                          # Our model version
     TARGET = "sales"
     KEY_COLUMN = 'store_id'          # training each id
     NUM_CPU = psutil.cpu_count() 
@@ -115,6 +114,7 @@ def main():
               'subsample': 0.5,
               'subsample_freq': 1,
               'seed': SEED,
+              'max_depth':
               'learning_rate': 0.03,
               'num_leaves': 2**11-1,
               'min_data_in_leaf': 2**12-1,
@@ -123,6 +123,7 @@ def main():
               'boost_from_average': False,
               'verbose': -1,
               'num_threads':NUM_CPU} 
+
 
     # training every stores
     for key_id in KEY_IDS:
@@ -154,7 +155,7 @@ def main():
         del grid_df
 
         # train
-        model = lgb.train(params, train_data, valid_sets = [valid_data], num_boost_round=10, verbose_eval = 100)
+        model = lgb.train(params, train_data, valid_sets = [valid_data], num_boost_round=2000, verbose_eval = 100)
 
         # save the estimator as .bin
         model_name = 'lgb_model_'+key_id+'_v'+str(VER)+'.bin'  # 保存場所
