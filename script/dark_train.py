@@ -94,9 +94,9 @@ def main():
     # NOW_DATE = datetime.today().strftime("%Y%m%d_%H%M%S")
     ORIGINAL = '../input/m5-forecasting-accuracy/' 
     OUTPUT = '../output/{}/'.format(KEY_COLUMN + str(VER))
-    MODEL = "../model/{}/".format(KEY_COLUMN + str(VER))  
+    # MODEL = "../model/{}/".format(KEY_COLUMN + str(VER))
     os.makedirs(OUTPUT, exist_ok=True)
-    os.makedirs(MODEL, exist_ok=True)
+    # os.makedirs(MODEL, exist_ok=True)
 
     #LIMITS and const
     START_TRAIN = 0                  # We can skip some rows (Nans/faster training)
@@ -140,7 +140,7 @@ def main():
         preds_mask = grid_df['d']>(END_TRAIN-100)                                    # 1814~1969  再帰的予測のため100日分のbafferを取っている
         
         # Apply masks
-        # print(grid_df[train_mask][features].columns)
+        print("validのtargetにあるラベル数:", grid_df[valid_mask][TARGET].notnull())
         train_data = lgb.Dataset(grid_df[train_mask][features], label=grid_df[train_mask][TARGET])
         valid_data = lgb.Dataset(grid_df[valid_mask][features], label=grid_df[valid_mask][TARGET])
         
@@ -157,11 +157,11 @@ def main():
         del grid_df
 
         # train
-        model = lgb.train(params, train_data, valid_sets = [train_data,valid_data], num_boost_round=2000, verbose_eval = 100)
+        model = lgb.train(params, train_data, valid_sets = [train_data,valid_data], num_boost_round=1400, verbose_eval = 100)
 
         # save the estimator as .bin
         model_name = 'lgb_model_'+key_id+'_v'+str(VER)+'.bin'  # 保存場所
-        pickle.dump(model, open(MODEL + model_name, 'wb'))
+        pickle.dump(model, open(OUTPUT + model_name, 'wb'))
 
         # Remove temporary files and objects 
         os.remove('train_data.bin')
