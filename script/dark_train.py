@@ -80,28 +80,28 @@ def get_data_by_key_column(KEY_COLUMN, TARGET, START_TRAIN, key_id):
     return df, features
 
 
-def main():
+def main(KEY_COLUMN):
     t1 = time.time()
 
     # var
     VER = 1                          # Our model version
     TARGET = "sales"
-    KEY_COLUMN = 'store_id'     # training each id
+    # KEY_COLUMN = 'store_id'     # training each id
     NUM_CPU = psutil.cpu_count() 
     SEED = 5046                      # We want all things
     seed_everything(SEED)            # to be as deterministic 
-
-    # NOW_DATE = datetime.today().strftime("%Y%m%d_%H%M%S")
-    ORIGINAL = '../input/m5-forecasting-accuracy/' 
-    OUTPUT = '../output/{}/'.format(KEY_COLUMN + str(VER))
-    # MODEL = "../model/{}/".format(KEY_COLUMN + str(VER))
-    os.makedirs(OUTPUT, exist_ok=True)
-    # os.makedirs(MODEL, exist_ok=True)
 
     #LIMITS and const
     START_TRAIN = 0                  # We can skip some rows (Nans/faster training)
     END_TRAIN   = 1913               # TODO 最終的に1941に変更 End day of our train set 
     P_HORIZON   = 28                 # Prediction horizon
+
+    # NOW_DATE = datetime.today().strftime("%Y%m%d_%H%M%S")
+    # ORIGINAL = '../input/m5-forecasting-accuracy/' 
+    OUTPUT = '../output/{}/'.format("v" + str(VER) + "_" + KEY_COLUMN + "_" + str(END_TRAIN))
+    # MODEL = "../model/{}/".format(KEY_COLUMN + str(VER))
+    os.makedirs(OUTPUT, exist_ok=True)
+    # os.makedirs(MODEL, exist_ok=True)
 
     #key ids list
     KEY_IDS = list(pd.read_pickle('../input/m5-simple-fe/grid_part_1.pkl')[KEY_COLUMN].unique())
@@ -138,7 +138,7 @@ def main():
         train_mask = grid_df['d']<=END_TRAIN                                         # 0~1913 最終的には0~1941
         valid_mask = (END_TRAIN<grid_df['d']) & (grid_df['d']<=END_TRAIN+P_HORIZON)  # 1914~1941  予測対象 最終的には1942-1969
         preds_mask = grid_df['d']>(END_TRAIN-100)                                    # 1814~1969  再帰的予測のため100日分のbafferを取っている
-        
+         
         # Apply masks
         print("validのtargetにあるラベル数:", grid_df[valid_mask][TARGET].notnull())
         train_data = lgb.Dataset(grid_df[train_mask][features], label=grid_df[train_mask][TARGET])
@@ -175,7 +175,8 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        for KEY_COLUMN in ['store_id', 'dept_id', 'dept_store_id']:
+            main(KEY_COLUMN)
     except:
         send_slack_error_notification("[ERROR]\n" + traceback.format_exc())
         print(traceback.format_exc())
