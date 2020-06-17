@@ -23,7 +23,7 @@ from tqdm import tqdm
 from utils import seed_everything, send_slack_notification, send_slack_error_notification
 
 # Read data every stores
-def get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id):
+def get_data_by_key_column(KEY_COLUMN, TARGET, START_TRAIN, key_id):
 
     #PATHS for Features
     BASE     = '../input/m5-simple-fe/grid_part_1.pkl'
@@ -71,6 +71,7 @@ def get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id):
 
     # Create featur es list
     features = [col for col in list(df) if col not in remove_features]
+    print("number of features: ", len(features))
     df = df[['id','d',TARGET] + features]
     
     # Skipping first n rows
@@ -83,17 +84,17 @@ def main():
     t1 = time.time()
 
     # var
-    VER = 2                          # Our model version
+    VER = 1                          # Our model version
     TARGET = "sales"
-    KEY_COLUMN = 'store_id'          # training each id
+    KEY_COLUMN = 'store_id'     # training each id
     NUM_CPU = psutil.cpu_count() 
     SEED = 5046                      # We want all things
     seed_everything(SEED)            # to be as deterministic 
 
-    NOW_DATE = datetime.today().strftime("%Y%m%d_%H%M%S")
+    # NOW_DATE = datetime.today().strftime("%Y%m%d_%H%M%S")
     ORIGINAL = '../input/m5-forecasting-accuracy/' 
-    OUTPUT = '../output/{}/'.format(NOW_DATE[4:13])
-    MODEL = "../model/{}/".format(NOW_DATE[4:13])  
+    OUTPUT = '../output/{}/'.format(KEY_COLUMN + str(VER))
+    MODEL = "../model/{}/".format(KEY_COLUMN + str(VER))  
     os.makedirs(OUTPUT, exist_ok=True)
     os.makedirs(MODEL, exist_ok=True)
 
@@ -103,7 +104,8 @@ def main():
     P_HORIZON   = 28                 # Prediction horizon
 
     #key ids list
-    KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_evaluation.csv')[KEY_COLUMN].unique())
+    KEY_IDS = list(pd.read_pickle('../input/m5-simple-fe/grid_part_1.pkl')[KEY_COLUMN].unique())
+    # KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_evaluation.csv')[KEY_COLUMN].unique())
     print("key id: {}\n".format(KEY_IDS))
     
     # Train Models
@@ -114,7 +116,6 @@ def main():
               'subsample': 0.5,
               'subsample_freq': 1,
               'seed': SEED,
-              'max_depth':
               'learning_rate': 0.03,
               'num_leaves': 2**11-1,
               'min_data_in_leaf': 2**12-1,
@@ -131,7 +132,7 @@ def main():
         send_slack_notification("Train:{}".format(key_id))
         
         # Get grid for current store
-        grid_df, features = get_data_by_store(KEY_COLUMN, TARGET, START_TRAIN, key_id)
+        grid_df, features = get_data_by_key_column(KEY_COLUMN, TARGET, START_TRAIN, key_id)
         
         # mask
         train_mask = grid_df['d']<=END_TRAIN                                         # 0~1913 最終的には0~1941
@@ -139,6 +140,7 @@ def main():
         preds_mask = grid_df['d']>(END_TRAIN-100)                                    # 1814~1969  再帰的予測のため100日分のbafferを取っている
         
         # Apply masks
+        # print(grid_df[train_mask][features].columns)
         train_data = lgb.Dataset(grid_df[train_mask][features], label=grid_df[train_mask][TARGET])
         valid_data = lgb.Dataset(grid_df[valid_mask][features], label=grid_df[valid_mask][TARGET])
         
@@ -155,7 +157,7 @@ def main():
         del grid_df
 
         # train
-        model = lgb.train(params, train_data, valid_sets = [valid_data], num_boost_round=2000, verbose_eval = 100)
+        model = lgb.train(params, train_data, valid_sets = [train_data,valid_data], num_boost_round=2000, verbose_eval = 100)
 
         # save the estimator as .bin
         model_name = 'lgb_model_'+key_id+'_v'+str(VER)+'.bin'  # 保存場所

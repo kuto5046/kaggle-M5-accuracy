@@ -158,7 +158,8 @@ try:
     # Join back the Test dataset with 
     # a small part of the training data 
     # to make recursive features
-    KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_evaluation.csv')[KEY_COLUMN].unique())
+    KEY_IDS = list(pd.read_pickle('../input/m5-simple-fe/grid_part_1.pkl')[KEY_COLUMN].unique())
+    # KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_evaluation.csv')[KEY_COLUMN].unique())
     base_test = get_base_test(KEY_COLUMN, KEY_IDS, OUTPUT)
 
     # Timer to measure predictions time 
