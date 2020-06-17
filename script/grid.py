@@ -78,7 +78,7 @@ def read_data(index_columns, END_TRAIN, TARGET):
     grid_df = pd.melt(train_df, id_vars = index_columns, var_name = 'd', value_name = TARGET)
     print('Train rows:', len(train_df), len(grid_df))
 
-    # add stage1 data(d1914 ~ d1941)
+    # add stage2 data(d1942 ~ d1969)
     add_grid = pd.DataFrame()
     for i in range(1,29):
         temp_df = train_df[index_columns]
@@ -121,6 +121,7 @@ def make_base_grid(grid_df, prices_df, calendar_df):
     release_df = prices_df.groupby(['store_id','item_id'])['wm_yr_wk'].agg(['min']).reset_index()
     release_df.columns = ['store_id','item_id','release']
     grid_df = merge_by_concat(grid_df, release_df, ['store_id','item_id'])
+    grid_df["dept_store_id"] = grid_df["dept_id"].str.cat(grid_df["store_id"], sep='_').astype('category')
     del release_df
 
     # wm_yr_wkをcalendarから持ってくる
@@ -136,7 +137,6 @@ def make_base_grid(grid_df, prices_df, calendar_df):
     # releaceが一番若い日(ほぼd1)を基準としてreleace日を算出 
     grid_df['release'] = grid_df['release'] - grid_df['release'].min()
     grid_df['release'] = grid_df['release'].astype(np.int16)
-
     # Let's check again memory usage
     print("{:>20}: {:>8}".format('Reduced grid_df',sizeof_fmt(grid_df.memory_usage(index=True).sum())))
     
@@ -291,15 +291,15 @@ def main():
     grid_df.to_pickle(grid_path + 'grid_part_1.pkl')
     print('Size:', grid_df.shape)
 
-    grid_df = make_prices_grid(grid_df, prices_df, calendar_df)
-    print('\nMerege preices and save part 2')
-    grid_df.to_pickle(grid_path + 'grid_part_2.pkl')
-    print('Size:', grid_df.shape)
+    # grid_df = make_prices_grid(grid_df, prices_df, calendar_df)
+    # print('\nMerege preices and save part 2')
+    # grid_df.to_pickle(grid_path + 'grid_part_2.pkl')
+    # print('Size:', grid_df.shape)
 
-    grid_df = make_calendar_grid(grid_df, calendar_df)
-    print('\nSave part 3')
-    grid_df.to_pickle(grid_path + 'grid_part_3.pkl')
-    print('Size:', grid_df.shape)
+    # grid_df = make_calendar_grid(grid_df, calendar_df)
+    # print('\nSave part 3')
+    # grid_df.to_pickle(grid_path + 'grid_part_3.pkl')
+    # print('Size:', grid_df.shape)
     
     # del grid_df
     
