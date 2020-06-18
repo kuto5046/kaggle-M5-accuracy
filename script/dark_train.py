@@ -34,8 +34,13 @@ def get_data_by_key_column(KEY_COLUMN, TARGET, START_TRAIN, key_id):
     
 
     # FEATURES to remove
-    # These features lead to overfit or values not present in test set
-    remove_features = ['id','state_id', KEY_COLUMN, 'date','wm_yr_wk','d', TARGET]
+    # These features lead to overfit or values not present in test set     
+    if KEY_COLUMN == "dept_store_id":
+        remove_features = ['id','state_id', KEY_COLUMN, 'dept_id', 'store_id', 'date','wm_yr_wk','d', TARGET]
+    else:    
+        remove_features = ['id','state_id', KEY_COLUMN, 'dept_store_id', 'date','wm_yr_wk','d', TARGET]
+        
+
     mean_features  = ['enc_cat_id_mean','enc_cat_id_std',
                     'enc_dept_id_mean','enc_dept_id_std',
                     'enc_item_id_mean','enc_item_id_std'] 
@@ -84,7 +89,7 @@ def main(KEY_COLUMN):
     t1 = time.time()
 
     # var
-    VER = 1                          # Our model version
+    VER = 2                          # Our model version
     TARGET = "sales"
     # KEY_COLUMN = 'store_id'     # training each id
     NUM_CPU = psutil.cpu_count() 
@@ -140,7 +145,7 @@ def main(KEY_COLUMN):
         preds_mask = grid_df['d']>(END_TRAIN-100)                                    # 1814~1969  再帰的予測のため100日分のbafferを取っている
          
         # Apply masks
-        print("validのtargetにあるラベル数:", grid_df[valid_mask][TARGET].notnull())
+        print("validのtargetにあるラベル数:", len(grid_df[valid_mask][TARGET].notnull()))
         train_data = lgb.Dataset(grid_df[train_mask][features], label=grid_df[train_mask][TARGET])
         valid_data = lgb.Dataset(grid_df[valid_mask][features], label=grid_df[valid_mask][TARGET])
         
