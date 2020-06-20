@@ -47,7 +47,11 @@ def get_features(TARGET):
 
     # FEATURES to remove
     # These features lead to overfit or values not present in test set
-    remove_features = ['id','state_id', KEY_COLUMN, 'date','wm_yr_wk', 'd', TARGET]
+    if KEY_COLUMN == "dept_store_id":
+        remove_features = ['id','state_id', KEY_COLUMN, 'dept_id', 'store_id', 'date','wm_yr_wk','d', TARGET]
+    else:    
+        remove_features = ['id','state_id', KEY_COLUMN, 'dept_store_id', 'date','wm_yr_wk','d', TARGET]
+
     mean_features  = ['enc_cat_id_mean','enc_cat_id_std',
                     'enc_dept_id_mean','enc_dept_id_std',
                     'enc_item_id_mean','enc_item_id_std'] 
@@ -107,7 +111,7 @@ def make_lag_roll(LAG_DAY):
     return lag_df[[col_name]]
 
 
-def submission(all_preds, ORIGINAL, OUTPUT, VER):
+def submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore):
     """
     Reading competition sample submission and
     merging our predictions
@@ -116,101 +120,106 @@ def submission(all_preds, ORIGINAL, OUTPUT, VER):
     """
     submission = pd.read_csv(ORIGINAL+'sample_submission.csv')[['id']]
     submission = submission.merge(all_preds, on=['id'], how='left').fillna(0)
-    submission.to_csv(OUTPUT + 'submission_v'+str(VER) + '.csv', index=False)
+    submission.to_csv(OUTPUT + 'sub_v'+str(VER) + "_" + KEY_COLUMN + "_" + str(round(WRMSSEscore, 3)) + '.csv', index=False)
 
 
-try:
-    t1 = time.time()
+# main関数に該当
+for KEY_COLUMN in ["store_id", "dept_id", "dept_store_id"]:
+    try:
+        t1 = time.time()
 
-    # var
-    VER = 0                          # Our model version
-    TARGET = "sales"
-    KEY_COLUMN = "store_id"
-    SEED = 5046                      # We want all things
-    seed_everything(SEED)            # to be as deterministic 
-    END_TRAIN   = 1913               # TODO  最後は1941に変更 End day of our train set
-    P_HORIZON   = 28                 # Prediction horizon
+        # var
+        VER = 0                          # Our model version
+        TARGET = "sales"
+        SEED = 5046                      # We want all things
+        seed_everything(SEED)            # to be as deterministic 
+        END_TRAIN   = 1913               # TODO  最後は1941に変更 End day of our train set
+        P_HORIZON   = 28                 # Prediction horizon
 
-    #PATHS for Features
-    ORIGINAL = '../input/m5-forecasting-accuracy/'
-    TRAINED_DIR = "0612_0040/"
-    MODEL = "../model/" + TRAINED_DIR
-    OUTPUT = '../output/' + TRAINED_DIR
+        #PATHS for Features
+        ORIGINAL = '../input/m5-forecasting-accuracy/'
+        # TRAINED_DIR = "0612_0040/"
+        # MODEL = "../model/" + TRAINED_DIR
+        # OUTPUT = '../output/' + TRAINED_DIR
+        OUTPUT = '../output/{}/'.format("v" + str(VER) + "_" + KEY_COLUMN + "_" + str(END_TRAIN))
 
-    os.makedirs(OUTPUT, exist_ok=True)
-    os.makedirs(MODEL, exist_ok=True)
+        os.makedirs(OUTPUT, exist_ok=True)
+        # os.makedirs(MODEL, exist_ok=True)
 
-    # SPLITS for lags creation
-    # SHIFT_DAY  = 28
-    # N_LAGS     = 15
-    # LAGS_SPLIT = [col for col in range(SHIFT_DAY, SHIFT_DAY + N_LAGS)]
-    ROLS_SPLIT = []
-    for i in [1,7,14]:
-        for j in [7,14,30,60]:
-            ROLS_SPLIT.append([i,j])
+        # SPLITS for lags creation
+        # SHIFT_DAY  = 28
+        # N_LAGS     = 15
+        # LAGS_SPLIT = [col for col in range(SHIFT_DAY, SHIFT_DAY + N_LAGS)]
+        ROLS_SPLIT = []
+        for i in [1,7,14]:
+            for j in [7,14,30,60]:
+                ROLS_SPLIT.append([i,j])
 
 
-    features = get_features(TARGET)
+        features = get_features(TARGET)
 
-    # Create Dummy DataFrame to store predictions
-    all_preds = pd.DataFrame()
+        # Create Dummy DataFrame to store predictions
+        all_preds = pd.DataFrame()
 
-    # Join back the Test dataset with 
-    # a small part of the training data 
-    # to make recursive features
-    KEY_IDS = list(pd.read_pickle('../input/m5-simple-fe/grid_part_1.pkl')[KEY_COLUMN].unique())
-    # KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_evaluation.csv')[KEY_COLUMN].unique())
-    base_test = get_base_test(KEY_COLUMN, KEY_IDS, OUTPUT)
+        # Join back the Test dataset with 
+        # a small part of the training data 
+        # to make recursive features
+        KEY_IDS = list(pd.read_pickle('../input/m5-simple-fe/grid_part_1.pkl')[KEY_COLUMN].unique())
+        # KEY_IDS = list(pd.read_csv(ORIGINAL + 'sales_train_evaluation.csv')[KEY_COLUMN].unique())
+        base_test = get_base_test(KEY_COLUMN, KEY_IDS, OUTPUT)
 
-    # Timer to measure predictions time 
-    main_time = time.time()
+        # Timer to measure predictions time 
+        main_time = time.time()
 
-    # Loop over each prediction day
-    # As rolling lags are the most timeconsuming
-    # we will calculate it for whole day
-    for PREDICT_DAY in range(1,29):    
-        print('Predict | Day:', PREDICT_DAY)
-        send_slack_notification('Predict | Day:{}'.format(PREDICT_DAY))
-        start_time = time.time()
+        # Loop over each prediction day
+        # As rolling lags are the most timeconsuming
+        # we will calculate it for whole day
+        for PREDICT_DAY in range(1,29):    
+            print('Predict | Day:', PREDICT_DAY)
+            send_slack_notification('Predict | Day:{}'.format(PREDICT_DAY))
+            start_time = time.time()
 
-        # Make temporary grid to calculate rolling lags
-        grid_df = base_test.copy()
-        grid_df = pd.concat([grid_df, df_parallelize_run(make_lag_roll, ROLS_SPLIT)], axis=1)
-        
-        for key_id in KEY_IDS:
+            # Make temporary grid to calculate rolling lags
+            grid_df = base_test.copy()
+            grid_df = pd.concat([grid_df, df_parallelize_run(make_lag_roll, ROLS_SPLIT)], axis=1)
             
-            # Read all our models and make predictions
-            # for each day/store pairs
-            model_name = 'lgb_model_'+key_id+'_v'+str(VER)+'.bin' 
-            model = pickle.load(open(MODEL + model_name, 'rb'))
+            for key_id in KEY_IDS:
+                
+                # Read all our models and make predictions
+                # for each day/store pairs
+                model_name = 'lgb_model_'+key_id+'_v'+str(VER)+'.bin' 
+                model = pickle.load(open(OUTPUT + model_name, 'rb'))
+                
+                day_mask = base_test['d']==(END_TRAIN + PREDICT_DAY)
+                key_mask = base_test[KEY_COLUMN] == key_id
+                
+                mask = (day_mask)&(key_mask)
+                base_test[TARGET][mask] = model.predict(grid_df[mask][features])
             
-            day_mask = base_test['d']==(END_TRAIN + PREDICT_DAY)
-            key_mask = base_test[KEY_COLUMN] == key_id
+            # Make good column naming and add to all_preds DataFrame
+            temp_df = base_test[day_mask][['id',TARGET]]
+            temp_df.columns = ['id','F'+str(PREDICT_DAY)]
+            if 'id' in list(all_preds):
+                all_preds = all_preds.merge(temp_df, on=['id'], how='left')
+            else:
+                all_preds = temp_df.copy()
+                
+            print('#'*10, ' %0.2f min round |' % ((time.time() - start_time) / 60),
+                        ' %0.2f min total |' % ((time.time() - main_time) / 60),
+                        ' %0.2f day sales |' % (temp_df['F'+str(PREDICT_DAY)].sum()))
+            del grid_df, temp_df
             
-            mask = (day_mask)&(key_mask)
-            base_test[TARGET][mask] = model.predict(grid_df[mask][features])
-        
-        # Make good column naming and add to all_preds DataFrame
-        temp_df = base_test[day_mask][['id',TARGET]]
-        temp_df.columns = ['id','F'+str(PREDICT_DAY)]
-        if 'id' in list(all_preds):
-            all_preds = all_preds.merge(temp_df, on=['id'], how='left')
-        else:
-            all_preds = temp_df.copy()
-            
-        print('#'*10, ' %0.2f min round |' % ((time.time() - start_time) / 60),
-                      ' %0.2f min total |' % ((time.time() - main_time) / 60),
-                      ' %0.2f day sales |' % (temp_df['F'+str(PREDICT_DAY)].sum()))
-        del grid_df, temp_df
-        
-    all_preds = all_preds.reset_index(drop=True)
-    all_preds["id"] = all_preds["id"].str.replace("evaluation", "validation") # TODO 後で削除
-    submission(all_preds, ORIGINAL, OUTPUT, VER)
+        all_preds = all_preds.reset_index(drop=True)
+        evaluator = WRMSSEEvaluator()
+        WRMSSEscore = evaluator.score(all_preds.iloc[:, 1:].to_numpy())
+        print("WRMSSE: ", WRMSSEscore)
+        all_preds["id"] = all_preds["id"].str.replace("evaluation", "validation") # TODO 後で削除
+        submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore)
 
-    t2 = time.time()
-    send_slack_notification("FINISH")
-    send_slack_notification("spend time: {}[min]".format(str((t2 - t1) / 60)))
+        t2 = time.time()
+        send_slack_notification("FINISH")
+        send_slack_notification("spend time: {}[min]".format(str((t2 - t1) / 60)))
 
-except:
-    send_slack_error_notification("[ERROR]\n" + traceback.format_exc())
-    print(traceback.format_exc())
+    except:
+        send_slack_error_notification("[ERROR]\n" + traceback.format_exc())
+        print(traceback.format_exc())
