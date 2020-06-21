@@ -89,7 +89,7 @@ def main(KEY_COLUMN):
     t1 = time.time()
 
     # var
-    VER = 2                          # Our model version
+    VER = 1                          # Our model version
     TARGET = "sales"
     # KEY_COLUMN = 'store_id'     # training each id
     NUM_CPU = psutil.cpu_count() 
@@ -98,7 +98,7 @@ def main(KEY_COLUMN):
 
     #LIMITS and const
     START_TRAIN = 0                  # We can skip some rows (Nans/faster training)
-    END_TRAIN   = 1913               # TODO 最終的に1941に変更 End day of our train set 
+    END_TRAIN   = 1941               # TODO 最終的に1941に変更 End day of our train set 
     P_HORIZON   = 28                 # Prediction horizon
 
     # NOW_DATE = datetime.today().strftime("%Y%m%d_%H%M%S")
@@ -145,7 +145,7 @@ def main(KEY_COLUMN):
         preds_mask = grid_df['d']>(END_TRAIN-100)                                    # 1814~1969  再帰的予測のため100日分のbafferを取っている
          
         # Apply masks
-        print("validのtargetにあるラベル数:", len(grid_df[valid_mask][TARGET].notnull()))
+        print("validのtargetにあるラベル数:", grid_df[valid_mask][TARGET].notnull().sum())
         train_data = lgb.Dataset(grid_df[train_mask][features], label=grid_df[train_mask][TARGET])
         valid_data = lgb.Dataset(grid_df[valid_mask][features], label=grid_df[valid_mask][TARGET])
         
