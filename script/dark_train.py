@@ -97,8 +97,8 @@ def main(KEY_COLUMN):
     seed_everything(SEED)            # to be as deterministic 
 
     #LIMITS and const
-    START_TRAIN = 0                  # We can skip some rows (Nans/faster training)
-    END_TRAIN   = 1941               # TODO 最終的に1941に変更 End day of our train set 
+    START_TRAIN = 1886                  # We can skip some rows (Nans/faster training)
+    END_TRAIN   = 1913               # TODO 最終的に1941に変更 End day of our train set 
     P_HORIZON   = 28                 # Prediction horizon
 
     # NOW_DATE = datetime.today().strftime("%Y%m%d_%H%M%S")
