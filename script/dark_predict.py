@@ -125,6 +125,7 @@ def submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore, END_TR
         data["id"] = data["id"].str.replace("evaluation", "validation")
         stage1 = data.iloc[:, -28:]
         stage1.insert(0, 'id', data['id'])
+        stage1.columns =["id"] + ['F'+str(i) for i in range(1,29)]
         submission = submission.merge(stage1, on=['id'], how='left').fillna(0)
     else:
         all_preds["id"] = all_preds["id"].str.replace("evaluation", "validation")
