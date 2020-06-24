@@ -129,11 +129,11 @@ for KEY_COLUMN in ["store_id", "dept_id", "dept_store_id"]:
         t1 = time.time()
 
         # var
-        VER = 2                          # Our model version
+        VER = 1                          # Our model version
         TARGET = "sales"
         SEED = 5046                      # We want all things
         seed_everything(SEED)            # to be as deterministic 
-        END_TRAIN   = 1913               # TODO  最後は1941に変更 End day of our train set
+        END_TRAIN   = 1941               # TODO  最後は1941に変更 End day of our train set
         P_HORIZON   = 28                 # Prediction horizon
 
         #PATHS for Features
