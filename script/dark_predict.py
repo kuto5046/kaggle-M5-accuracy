@@ -126,11 +126,12 @@ def submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore, END_TR
         stage1 = data.iloc[:, -28:]
         stage1.insert(0, 'id', data['id'])
         stage1.columns =["id"] + ['F'+str(i) for i in range(1,29)]
-        submission = submission.merge(stage1, on=['id'], how='left').fillna(0)
+        stage2 = all_preds 
+        submission = submission.merge(pd.concat([stage1, stage2]), on=['id'], how='left').fillna(0)
     else:
         all_preds["id"] = all_preds["id"].str.replace("evaluation", "validation")
+        submission = submission.merge(all_preds, on=['id'], how='left').fillna(0)
 
-    submission = submission.merge(all_preds, on=['id'], how='left').fillna(0)
     submission.to_csv(OUTPUT + 'sub_v'+str(VER) + "_" + KEY_COLUMN + "_" + str(round(WRMSSEscore, 3)) + '.csv', index=False)
 
 
