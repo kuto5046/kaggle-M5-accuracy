@@ -111,7 +111,7 @@ def make_lag_roll(LAG_DAY):
     return lag_df[[col_name]]
 
 
-def submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore):
+def submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore, END_TRAIN):
     """
     Reading competition sample submission and
     merging our predictions
@@ -119,6 +119,16 @@ def submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore):
     we need to do fillna() for "_evaluation" items
     """
     submission = pd.read_csv(ORIGINAL+'sample_submission.csv')[['id']]
+
+    if END_TRAIN == 1941:
+        data = pd.read_csv("../input/m5-forecasting-accuracy/sales_train_evaluation.csv")
+        data["id"] = data["id"].str.replace("evaluation", "validation")
+        stage1 = data.iloc[:, -28:]
+        stage1.insert(0, 'id', data['id'])
+        submission = submission.merge(stage1, on=['id'], how='left').fillna(0)
+    else:
+        all_preds["id"] = all_preds["id"].str.replace("evaluation", "validation")
+
     submission = submission.merge(all_preds, on=['id'], how='left').fillna(0)
     submission.to_csv(OUTPUT + 'sub_v'+str(VER) + "_" + KEY_COLUMN + "_" + str(round(WRMSSEscore, 3)) + '.csv', index=False)
 
@@ -213,8 +223,8 @@ for KEY_COLUMN in ["store_id", "dept_id", "dept_store_id"]:
         evaluator = WRMSSEEvaluator()
         WRMSSEscore = evaluator.score(all_preds.iloc[:, 1:].to_numpy())
         print("WRMSSE: ", WRMSSEscore)
-        all_preds["id"] = all_preds["id"].str.replace("evaluation", "validation") # TODO 後で削除
-        submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore)
+        
+        submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore, END_TRAIN)
 
         t2 = time.time()
         send_slack_notification("FINISH")
