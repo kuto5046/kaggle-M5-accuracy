@@ -26,7 +26,7 @@ from utils import seed_everything, send_slack_notification, send_slack_error_not
 def get_data_by_key_column(KEY_COLUMN, TARGET, START_TRAIN, key_id):
 
     #PATHS for Features
-    BASE     = '../input/m5-simple-fe/grid_part_1.pkl'
+    BASE     = '../input/m5-simple-fe/grid_part_1_1913.pkl'
     PRICE    = '../input/m5-simple-fe/grid_part_2.pkl'
     CALENDAR = '../input/m5-simple-fe/grid_part_3.pkl'
     LAGS     = '../input/m5-lags-features/lags_df_28.pkl'
@@ -36,9 +36,9 @@ def get_data_by_key_column(KEY_COLUMN, TARGET, START_TRAIN, key_id):
     # FEATURES to remove
     # These features lead to overfit or values not present in test set     
     if KEY_COLUMN == "dept_store_id":
-        remove_features = ['id','state_id', KEY_COLUMN, 'dept_id', 'store_id', 'date','wm_yr_wk','d', TARGET]
+        remove_features = ['id','state_id', KEY_COLUMN, 'dept_id', 'store_id', 'date','wm_yr_wk', 'd', 'tm_y', 'tm_m', TARGET]
     else:    
-        remove_features = ['id','state_id', KEY_COLUMN, 'dept_store_id', 'date','wm_yr_wk','d', TARGET]
+        remove_features = ['id','state_id', KEY_COLUMN, 'dept_store_id', 'date','wm_yr_wk', 'd', 'tm_y', 'tm_m', TARGET]
         
 
     mean_features  = ['enc_cat_id_mean','enc_cat_id_std',
@@ -89,7 +89,7 @@ def main(KEY_COLUMN):
     t1 = time.time()
 
     # var
-    VER = 1                          # Our model version
+    VER = 5                          # Our model version
     TARGET = "sales"
     # KEY_COLUMN = 'store_id'     # training each id
     NUM_CPU = psutil.cpu_count() 
@@ -97,7 +97,7 @@ def main(KEY_COLUMN):
     seed_everything(SEED)            # to be as deterministic 
 
     #LIMITS and const
-    START_TRAIN = 1886                  # We can skip some rows (Nans/faster training)
+    START_TRAIN = 0                  # We can skip some rows (Nans/faster training)
     END_TRAIN   = 1913               # TODO 最終的に1941に変更 End day of our train set 
     P_HORIZON   = 28                 # Prediction horizon
 
