@@ -39,7 +39,7 @@ def df_parallelize_run(func, t_split):
 
 # Read data every stores
 def get_features(TARGET):
-    BASE     = '../input/m5-simple-fe/grid_part_1.pkl'
+    BASE     = '../input/m5-simple-fe/grid_part_1_1913.pkl'
     PRICE    = '../input/m5-simple-fe/grid_part_2.pkl'
     CALENDAR = '../input/m5-simple-fe/grid_part_3.pkl'
     LAGS     = '../input/m5-lags-features/lags_df_28.pkl'
@@ -141,11 +141,11 @@ for KEY_COLUMN in ["store_id", "dept_id", "dept_store_id"]:
         t1 = time.time()
 
         # var
-        VER = 1                          # Our model version
+        VER = 5                          # Our model version
         TARGET = "sales"
         SEED = 5046                      # We want all things
         seed_everything(SEED)            # to be as deterministic 
-        END_TRAIN   = 1941               # TODO  最後は1941に変更 End day of our train set
+        END_TRAIN   = 1913              # TODO  最後は1941に変更 End day of our train set
         P_HORIZON   = 28                 # Prediction horizon
 
         #PATHS for Features

@@ -36,9 +36,9 @@ def get_data_by_key_column(KEY_COLUMN, TARGET, START_TRAIN, key_id):
     # FEATURES to remove
     # These features lead to overfit or values not present in test set     
     if KEY_COLUMN == "dept_store_id":
-        remove_features = ['id','state_id', KEY_COLUMN, 'dept_id', 'store_id', 'date','wm_yr_wk', 'd', 'tm_y', 'tm_m', TARGET]
+        remove_features = ['id','state_id', KEY_COLUMN, 'dept_id', 'store_id', 'date','wm_yr_wk', 'd', TARGET]
     else:    
-        remove_features = ['id','state_id', KEY_COLUMN, 'dept_store_id', 'date','wm_yr_wk', 'd', 'tm_y', 'tm_m', TARGET]
+        remove_features = ['id','state_id', KEY_COLUMN, 'dept_store_id', 'date','wm_yr_wk', 'd', TARGET]
         
 
     mean_features  = ['enc_cat_id_mean','enc_cat_id_std',
