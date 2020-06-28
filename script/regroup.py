@@ -33,13 +33,15 @@ def reduce_mem_usage(df, verbose=True):
     if verbose: print('Mem. usage decreased to {:5.2f} Mb ({:.1f}% reduction)'.format(end_mem, 100 * (start_mem - end_mem) / start_mem))
     return df
 
+
 def group_sales(grid, column):
-    group = grid.groupby([column, "d"]).sum()
+    group = grid.groupby([column, "d"]).sum()  # その日のcolumnごとの
     group = group.loc[:, "sales"].rename(column + '_sales')
     grid = pd.merge(grid, group, on=[column, "d"])
-    grid["diff_" + column + '_sales'] = grid[column + '_sales'] - grid["sales"]
-    grid["ratio_" + column + '_sales'] = grid["sales"] / grid[column + '_sales']
+    # grid["diff_" + column + '_sales'] = grid[column + '_sales'] - grid["sales"]  # 過学習するので削除
+    # grid["ratio_" + column + '_sales'] = grid["sales"] / grid[column + '_sales']
     return grid
+
 
 def concat_grid_and_pred(grid, pred):
     pred = pred[pred["id"].str.contains("validation")]
@@ -55,18 +57,19 @@ def concat_grid_and_pred(grid, pred):
     grid.loc[(END_TRAIN < grid["d"]) & (grid["d"] <= END_TRAIN + P_HORIZON), "sales"] = pred["sales"].to_numpy()
     return grid
 
-END_TRAIN = 1941
+
+END_TRAIN = 1913
 P_HORIZON = 28
 
 grid = pd.read_pickle("../input/m5-simple-fe/grid_part_1.pkl")
+grid2 = grid.copy()
 columns_list = ["store_id", "dept_id", "dept_store_id", "cat_id", "state_id"]
 pred = pd.read_csv("../sub/sub_v2_store_id_0.474.csv")
-grid = concat_grid_and_pred(grid, pred)
+grid2 = concat_grid_and_pred(grid2, pred)
 
 for column_name in columns_list:
-    grid = group_sales(grid, column_name)
+    grid2 = group_sales(grid2, column_name)
 
-grid = reduce_mem_usage(grid)
-grid.loc[(END_TRAIN < grid["d"]) & (grid["d"] <= END_TRAIN + P_HORIZON), "sales"] = np.nan
-
-grid.to_pickle('../input/m5-simple-fe/grid_part_1_{}.pkl'.format(str(END_TRAIN)))
+grid2 = reduce_mem_usage(grid2)
+grid2["sales"] = grid["sales"]
+grid2.to_pickle('../input/m5-simple-fe/grid_part_1_{}.pkl'.format(str(END_TRAIN)))
