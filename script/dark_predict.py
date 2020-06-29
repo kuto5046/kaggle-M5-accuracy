@@ -118,21 +118,13 @@ def submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore, END_TR
     As we have predictions only for "_validation" data
     we need to do fillna() for "_evaluation" items
     """
-    submission = pd.read_csv(ORIGINAL+'sample_submission.csv')[['id']]
+    sub = pd.read_csv(ORIGINAL+'sample_submission.csv')[['id']]
 
-    if END_TRAIN == 1941:
-        data = pd.read_csv("../input/m5-forecasting-accuracy/sales_train_evaluation.csv")
-        data["id"] = data["id"].str.replace("evaluation", "validation")
-        stage1 = data.iloc[:, -28:]
-        stage1.insert(0, 'id', data['id'])
-        stage1.columns =["id"] + ['F'+str(i) for i in range(1,29)]
-        stage2 = all_preds 
-        submission = submission.merge(pd.concat([stage1, stage2]), on=['id'], how='left').fillna(0)
-    else:
+    if END_TRAIN == 1913:
         all_preds["id"] = all_preds["id"].str.replace("evaluation", "validation")
-        submission = submission.merge(all_preds, on=['id'], how='left').fillna(0)
 
-    submission.to_csv(OUTPUT + 'sub_v'+str(VER) + "_" + KEY_COLUMN + "_" + str(round(WRMSSEscore, 3)) + '.csv', index=False)
+    sub = sub.merge(all_preds, on=['id'], how='left').fillna(0)
+    sub.to_csv(OUTPUT + 'sub_v'+str(VER) + "_" + KEY_COLUMN + "_" + str(round(WRMSSEscore, 3)) + '.csv', index=False)
 
 
 # main関数に該当
@@ -141,7 +133,7 @@ for KEY_COLUMN in ["store_id", "dept_id", "dept_store_id"]:
         t1 = time.time()
 
         # var
-        VER = 5                          # Our model version
+        VER = 6                          # Our model version
         TARGET = "sales"
         SEED = 5046                      # We want all things
         seed_everything(SEED)            # to be as deterministic 
@@ -231,7 +223,7 @@ for KEY_COLUMN in ["store_id", "dept_id", "dept_store_id"]:
         t2 = time.time()
         send_slack_notification("FINISH")
         send_slack_notification("spend time: {}[min]".format(str((t2 - t1) / 60)))
-
+        break
     except:
         send_slack_error_notification("[ERROR]\n" + traceback.format_exc())
         print(traceback.format_exc())
