@@ -89,7 +89,7 @@ def main(KEY_COLUMN):
     t1 = time.time()
 
     # var
-    VER = 5                          # Our model version
+    VER = 6                          # Our model version
     TARGET = "sales"
     # KEY_COLUMN = 'store_id'     # training each id
     NUM_CPU = psutil.cpu_count() 
@@ -182,6 +182,7 @@ if __name__ == "__main__":
     try:
         for KEY_COLUMN in ['store_id', 'dept_id', 'dept_store_id']:
             main(KEY_COLUMN)
+            break
     except:
         send_slack_error_notification("[ERROR]\n" + traceback.format_exc())
         print(traceback.format_exc())
