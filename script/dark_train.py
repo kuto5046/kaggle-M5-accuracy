@@ -26,7 +26,7 @@ from utils import seed_everything, send_slack_notification, send_slack_error_not
 def get_data_by_key_column(KEY_COLUMN, TARGET, START_TRAIN, key_id):
 
     #PATHS for Features
-    BASE     = '../input/m5-simple-fe/grid_part_1_1913.pkl'
+    BASE     = '../input/m5-simple-fe/grid_part_1_1941.pkl'
     PRICE    = '../input/m5-simple-fe/grid_part_2.pkl'
     CALENDAR = '../input/m5-simple-fe/grid_part_3.pkl'
     LAGS     = '../input/m5-lags-features/lags_df_28.pkl'
@@ -98,7 +98,7 @@ def main(KEY_COLUMN):
 
     #LIMITS and const
     START_TRAIN = 0                  # We can skip some rows (Nans/faster training)
-    END_TRAIN   = 1913               # TODO 最終的に1941に変更 End day of our train set 
+    END_TRAIN   = 1941               # TODO 最終的に1941に変更 End day of our train set 
     P_HORIZON   = 28                 # Prediction horizon
 
     # NOW_DATE = datetime.today().strftime("%Y%m%d_%H%M%S")
@@ -182,7 +182,6 @@ if __name__ == "__main__":
     try:
         for KEY_COLUMN in ['store_id', 'dept_id', 'dept_store_id']:
             main(KEY_COLUMN)
-            break
     except:
         send_slack_error_notification("[ERROR]\n" + traceback.format_exc())
         print(traceback.format_exc())
