@@ -38,8 +38,10 @@ def group_sales(grid, column):
     group = grid.groupby([column, "d"]).sum()  # その日のcolumnごとの
     group = group.loc[:, "sales"].rename(column + '_sales')
     grid = pd.merge(grid, group, on=[column, "d"])
-    # grid["diff_" + column + '_sales'] = grid[column + '_sales'] - grid["sales"]  # 過学習するので削除
-    # grid["ratio_" + column + '_sales'] = grid["sales"] / grid[column + '_sales']
+
+    grid.sort_values(["id", "d"], inplace=True)
+    grid.reset_index(drop=True, inplace=True)
+
     return grid
 
 
@@ -53,23 +55,30 @@ def concat_grid_and_pred(grid, pred):
 
     grid.sort_values(["id", "d"], inplace=True)
     pred.sort_values(["id", "d"], inplace=True)
+    grid.reset_index(drop=True, inplace=True)
+    pred.reset_index(drop=True, inplace=True)
 
     grid.loc[(END_TRAIN < grid["d"]) & (grid["d"] <= END_TRAIN + P_HORIZON), "sales"] = pred["sales"].to_numpy()
     return grid
 
 
-END_TRAIN = 1913
+END_TRAIN = 1941
 P_HORIZON = 28
 
-grid = pd.read_pickle("../input/m5-simple-fe/grid_part_1.pkl")
-grid2 = grid.copy()
+grid_df = pd.read_pickle("../input/m5-simple-fe/grid_part_1.pkl")
+grid_df.sort_values(["id", "d"], inplace=True)
+grid_df.reset_index(drop=True, inplace=True)
+
+grid2 = grid_df.copy()
 columns_list = ["store_id", "dept_id", "dept_store_id", "cat_id", "state_id"]
 pred = pd.read_csv("../sub/sub_v2_store_id_0.474.csv")
+
 grid2 = concat_grid_and_pred(grid2, pred)
 
 for column_name in columns_list:
     grid2 = group_sales(grid2, column_name)
 
+
 grid2 = reduce_mem_usage(grid2)
-grid2["sales"] = grid["sales"]
+grid2["sales"] = grid_df["sales"]
 grid2.to_pickle('../input/m5-simple-fe/grid_part_1_{}.pkl'.format(str(END_TRAIN)))
