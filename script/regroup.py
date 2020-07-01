@@ -35,9 +35,23 @@ def reduce_mem_usage(df, verbose=True):
 
 
 def group_sales(grid, column):
-    group = grid.groupby([column, "d"]).sum()  # その日のcolumnごとの
-    group = group.loc[:, "sales"].rename(column + '_sales')
-    grid = pd.merge(grid, group, on=[column, "d"])
+    sum_group = grid.groupby([column, "d"]).sum()
+    mean_group = grid.groupby([column, "d"]).mean()
+    median_group = grid.groupby([column, "d"]).median()
+    std_group = grid.groupby([column, "d"]).std()
+    max_group = grid.groupby([column, "d"]).max()
+
+    sum_group = sum_group.loc[:, "sales"].rename(column + '_sum_sales')
+    mean_group = mean_group.loc[:, "sales"].rename(column + '_mean_sales')
+    median_group = median_group.loc[:, "sales"].rename(column + '_median_sales')
+    std_group = std_group.loc[:, "sales"].rename(column + '_std_sales')
+    max_group = max_group.loc[:, "sales"].rename(column + '_max_sales')
+
+    grid = pd.merge(grid, sum_group, on=[column, "d"])
+    grid = pd.merge(grid, mean_group, on=[column, "d"])
+    grid = pd.merge(grid, median_group, on=[column, "d"])
+    grid = pd.merge(grid, std_group, on=[column, "d"])
+    grid = pd.merge(grid, max_group, on=[column, "d"])
 
     grid.sort_values(["id", "d"], inplace=True)
     grid.reset_index(drop=True, inplace=True)
@@ -70,7 +84,7 @@ grid_df.sort_values(["id", "d"], inplace=True)
 grid_df.reset_index(drop=True, inplace=True)
 
 grid2 = grid_df.copy()
-columns_list = ["store_id", "dept_id", "dept_store_id", "cat_id", "state_id"]
+columns_list = ["store_id", "cat_id", "state_id"]
 pred = pd.read_csv("../sub/sub_v2_store_id_0.474.csv")
 
 grid2 = concat_grid_and_pred(grid2, pred)
@@ -81,4 +95,4 @@ for column_name in columns_list:
 
 grid2 = reduce_mem_usage(grid2)
 grid2["sales"] = grid_df["sales"]
-grid2.to_pickle('../input/m5-simple-fe/grid_part_1_{}.pkl'.format(str(END_TRAIN)))
+grid2.to_pickle('../input/m5-simple-fe/grid_part_1_{}_last2.pkl'.format(str(END_TRAIN)))

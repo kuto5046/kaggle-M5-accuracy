@@ -1,79 +1,64 @@
 # M5 Forecasting - Accuracy
 #### Estimate the unit sales of Walmart retail goods
+[competition link](https://www.kaggle.com/c/m5-forecasting-accuracy)
 
-## 概要  
-(Public) stage1では1914日目から1941日目までの予測を行う。
-(Private) stage2(コンペの最終評価)では1942日目から1969日目までの予測を行う。    
-ひとまずは与えられたcsvデータを用いて1914-1941日を予測する  
+## Leader Board Ranking
+- public LB: 1518th  
+- private LB: 512th (blonze 🥉)
 
-## data
-### calendar.csv
+## competiton contents
+warmarketの過去の販売データを用いて、データにない将来の販売需要を予測を行うコンペ  
+(Public) stage1では1914日目から1941日目までの予測を行う。  
+(Private) stage2(コンペの最終評価)では1942日目から1969日目までの予測を行う。      
+
+## about data
+### 1. calendar.csv
 2011/01/29 ~ 2016/06/19 までの1969日間のカレンダー情報  
 
-### sales_train_validation.csv  
+### 2. sales_train_validation.csv  
 1913日間(訓練データ)の売り上げ情報  
 train: d_1(2011/01/29)  ~ d_1913(2016/04/24)
 
-### sample_submission.csv
+### 3. sample_submission.csv  
 ある匿名のアイテム30490個が未来の28日間で何個売れるかを予測する  
-stage1: d_1914(2016/04/25) ~ d_1941(2016/05/22)  コンペ終了1ヶ月前(6/1)に正解データが与えられる
-stage2: d_1942(2016/05/23) ~ d_1969(2016/06/19)　与えられたデータを基にこの範囲の需要を予測
+stage1: d_1914(2016/04/25) ~ d_1941(2016/05/22)  
+stage2: d_1942(2016/05/23) ~ d_1969(2016/06/19)
 
-### sell_prices.csv  
+### 4. sell_prices.csv  
+商品の日ごとの販売価格  
 
-### grid
-grid1 商品のreleace情報を含めたdata
-releaseしていない日は削除されている  
-
-grid2 sell_price情報から統計量を抽出したもの
-      ただしまだfeature enginneringは行なっていない  
-grid3 calendar情報
-
-lags
-lag
-rolling mean
-rolling std
-rolling mean tmp
-
-### info
-店舗数 10(CA(カリフォルニア):4, Tx(テキサス):3, WI(ウィスコンシン):3)
-
-### Discussion & knowleadge
-似た過去のコンペ
-[M5 forecast 2 python](https://www.kaggle.com/kneroma/m5-forecast-v2-python)  
-検証はダミーで行う  
-テストのlag特徴量を1日ずつ作成してpredict  
-
-[Few thoughts about M5 competition](https://www.kaggle.com/c/m5-forecasting-accuracy/discussion/138881)
-grid作成  
-lagによるnanを削除するか否か　　
-loss関数がfrexibleなのでNNも検討  
-アンサンブルとスタッキング  
-
-[Back to (predict) the future - Interactive M5 EDA](https://www.kaggle.com/headsortails/back-to-predict-the-future-interactive-m5-eda)
-最大投票のEDA
-
-### MEMO
-4/8  
-データ数や特徴量を追加することで結果が悪くなることが多い 　
-ノイズとなっている特徴量がある or leakの可能性  
-いずれにしても現在のコードに交差検証の方法を確立しないと方針が立てにくい  
-
-4/9
-rmean_lag7_28が圧倒的にgain重要度高い理由について考える  
-商品のreleace dayについて 
-ある商品だけ周期性がある可能性は十分にあるのでEDAをして見つけたらそれのみを予測するモデルを作る
-
-4/26
-grid化の意味
-out of stock(releace day)の情報をいれる
+## solution
+### 方針
+評価指標が独特で交差検証がうまくいかないコンペだったので  
+ハイパラは基本的に触らず、学習方法や予測方法を工夫することを意識した  
 
 
-6/8
-issuesの棚卸し  
-1914~1941の予測と実際を比較してズレている部分をみる  
-tsfreshによる新しい特徴量の追加
-NNの利用  
-線形モデル  
-スタッキング  
-psude labeling    
+### モデル  
+lightGBMで作成した3つのモデルをアンサンブル  
+①お店ごとに訓練を行ったモデル  
+②ジャンルごとに訓練したモデル  
+③お店のジャンルごとに訓練したモデル  
+
+### validation
+1914日目-1941日目(public LBに対応する予測範囲)を対象にhold-out validationを行う  
+validation結果が最も良かったものを最終submissionとして選択
+  
+### feature enginnering
+- 1, 7, 14, 30, 60, 180日でlag, rolling特徴量
+(1,7,14の特徴量は予測時には通常使えないが以下のrecurisive featuresを予測時に作成することでこれらの特徴量もモデルに利用できるようにした)
+- recurisive features-予測時にlag特徴量を作成  
+(ただし、public LBの期間に過学習している可能性が高いので有効ではないかも?)  
+- 商品の簡易的なリリース日  
+(初めの段階では販売されていない商品もあるため)  
+- 販売価格の集約統計量   
+
+### predict
+1日ごとに予測を行い,前日の予測結果からlag,rolling特徴量を作成し次の日を予測(recurisive)
+
+### その他試したこと
+以下は試したがCVが落ちてしまったので利用しなかったこと  
+- 売れるか売れないかの2値分類  
+- ベースラインのモデルで予測を行うと、商品ごとの需要は全然当てられていなかったが,お店ごと,商品カテゴリごと、エリアごとの日ごとの販売合計数はうまく予測できていたので
+ベースラインで予測した販売数を使って日ごとの販売総数を特徴量として追加し再学習  
+- 日ごとではなく週ごとの予測  
+

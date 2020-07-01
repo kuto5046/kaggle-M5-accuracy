@@ -22,7 +22,7 @@ def submission(pred, score):
 
     sub = pd.read_csv('../input/m5-forecasting-accuracy/sample_submission.csv')[['id']]
     sub = sub.merge(pred, on=['id'], how='left').fillna(0)
-    sub.to_csv('../sub/sub_ensemble_' + str(round(score, 3)) + "_" + str(END_TRAIN) + '.csv', index=False)
+    sub.to_csv('../sub/sub_ensemble_' + str(round(score, 3)) + "_" + str(END_TRAIN) + '_late' + '.csv', index=False)
 
 
 END_TRAIN = 1941
@@ -32,6 +32,8 @@ valid_preds3 = pd.read_csv("../sub/stage2/sub_v1_dept_store_id_0.772.csv")
 # valid_preds1 = pd.read_csv("../sub/sub_v2_dept_id_0.488.csv")
 # valid_preds2 = pd.read_csv("../sub/sub_v2_store_id_0.474.csv")
 # valid_preds3 = pd.read_csv("../sub/sub_v2_dept_store_id_0.489.csv")
+# valid_preds4 = pd.read_csv("../sub/sub_v6_store_id_0.544.csv")
+# valid_preds5 = pd.read_csv("../output/v6_store_id_1913/sub_v6_store_id_0.622.csv")
 preds = [valid_preds1, valid_preds2, valid_preds3]
 
 if END_TRAIN == 1913:
@@ -41,7 +43,7 @@ if END_TRAIN == 1913:
     evaluator = WRMSSEEvaluator()
 
     # Optimization runs 100 times.
-    for _ in tqdm(range(100)):
+    for _ in tqdm(range(50)):
         starting_values = np.random.uniform(size=len(preds))
         # cons are given as constraints.
         cons = ({'type':'eq','fun':lambda w: 1-sum(w)})
@@ -59,7 +61,7 @@ if END_TRAIN == 1913:
 
 else:
     bestSC = 0
-    bestWeight = [0.1, 0.9, 0.0]
+    bestWeight = [0.3, 0.4, 0.3]
 
 
 ensemble_pred = 0

@@ -39,7 +39,7 @@ def df_parallelize_run(func, t_split):
 
 # Read data every stores
 def get_features(TARGET):
-    BASE     = '../input/m5-simple-fe/grid_part_1_1913.pkl'
+    BASE     = '../input/m5-simple-fe/grid_part_1_1913_last.pkl'
     PRICE    = '../input/m5-simple-fe/grid_part_2.pkl'
     CALENDAR = '../input/m5-simple-fe/grid_part_3.pkl'
     LAGS     = '../input/m5-lags-features/lags_df_28.pkl'
@@ -128,7 +128,8 @@ def submission(all_preds, ORIGINAL, KEY_COLUMN, OUTPUT, VER, WRMSSEscore, END_TR
 
 
 # main関数に該当
-for KEY_COLUMN in ["store_id", "dept_id", "dept_store_id"]:
+for KEY_COLUMN in ["dept_store_id"]:
+
     try:
         t1 = time.time()
 
